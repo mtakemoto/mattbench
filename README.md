@@ -8,7 +8,7 @@ Two planned [agent instruction cases](docs/agent-instruction-benchmarks.md) cove
 
 ## Inspect AI replacement pilot
 
-[Inspect AI](https://inspect.aisi.org.uk/) `0.3.278` now runs the same two smoke prompts and a disposable coding repair through local FreeToken. See [the pilot report](docs/inspect-pilot.md) for results, setup, and replacement criteria. Install the pinned Python dependencies from [requirements-inspect.txt](requirements-inspect.txt) in an ignored `.venv`, then run `.venv/bin/python scripts/run-inspect-local.py`. The coding task builds [a small Docker sandbox](inspect/Dockerfile) and requires local Docker access. Run `.venv/bin/python scripts/inspect-report.py` to export dashboard-ready, non-secret fields to ignored `artifacts/inspect/summary.json`; use `.venv/bin/inspect view --log-dir artifacts/inspect` for detailed local logs. The launcher has no paid-provider fallback.
+[Inspect AI](https://inspect.aisi.org.uk/) `0.3.278` is now the primary engine for new benchmarks. It ran the smoke questions, a disposable coding repair, real ha-mcp against a synthetic Home Assistant container, and an actual Pi agent instruction task. The [pilot report](docs/inspect-pilot.md) records the results and limits. The Pi task failed its scoped instruction assertion; the harness and grading path worked. Install the pinned Python dependencies from [requirements-inspect.txt](requirements-inspect.txt) in an ignored `.venv`, then run `.venv/bin/python scripts/run-inspect-local.py`. Run `.venv/bin/python scripts/inspect-report.py` to export dashboard-ready, non-secret fields to ignored `artifacts/inspect/summary.json`; use `.venv/bin/inspect view --log-dir artifacts/inspect` for detailed local logs. Local launchers have no paid-provider fallback.
 
 ## Run the Promptfoo smoke test
 
@@ -58,7 +58,7 @@ This repository contains plans and sanitized fixtures only. Keep API keys, Home 
 
 ## First implementation decisions
 
-1. Keep the pinned Promptfoo smoke configurations as baselines while testing Inspect AI as the main evaluation engine. Use the same fixtures and objective outcomes; compare report coverage before migrating future runs.
+1. Keep the pinned Promptfoo smoke configurations as historical baselines. Use Inspect AI for new runs, objective scoring, and the app report.
 2. For paid calls, use an OpenRouter workspace or dedicated key with an explicit USD limit and a fixed run/stop condition. Record usage per run; dynamic spending shutdown is optional.
 3. Keep the completed mock MCP case as a harness smoke test. Build the representative HA set through real ha-mcp and disposable Synthetic Home containers.
 4. Freeze model IDs, versions, prompts, tools, fixtures, and seeds for each comparison; run a small repeated finalist round.

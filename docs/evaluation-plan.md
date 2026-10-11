@@ -46,7 +46,7 @@ Start with deterministic synthetic homes and repositories. A few [Home Assistant
 
 ## Inspect AI replacement pilot
 
-**Observed — 2026-10-10:** [Inspect AI `0.3.278`](inspect-pilot.md) ran the two pinned smoke cases (1/2) and a disposable multi-turn coding repair (pass) against local FreeToken. The coding case also passed with a purpose-built, unprivileged, networkless Docker image. A small exporter converts Inspect logs into dashboard-ready JSON. No HA or instruction-following case has run in Inspect yet. Evaluate those paths and a multi-model/prompt report before replacing Promptfoo for future runs.
+**Observed — 2026-10-11 UTC:** [Inspect AI `0.3.278`](inspect-pilot.md) completed the replacement gates: no-tool smoke (1/2 local), disposable coding repair (pass), real ha-mcp against disposable Synthetic Home (pass), a Pi instruction-scope task (failed its objective assertion), and base/careful prompt variants (1/2 each local). A small exporter converts Inspect logs into dashboard-ready JSON. Inspect is the primary engine for new evaluations; Promptfoo remains a historical baseline. These few tasks do not establish model superiority.
 
 ## Staged spending
 

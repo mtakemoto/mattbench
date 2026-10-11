@@ -10,7 +10,7 @@ from inspect_ai import Task, task
 from inspect_ai.agent import react
 from inspect_ai.dataset import Sample
 from inspect_ai.scorer import Score, Target, accuracy, match, scorer
-from inspect_ai.solver import TaskState, generate
+from inspect_ai.solver import TaskState, generate, system_message
 from inspect_ai.tool import bash
 from inspect_ai.tool import mcp_server_stdio, mcp_tools
 from inspect_ai.util import sandbox
@@ -20,7 +20,9 @@ ROOT = Path(__file__).resolve().parent
 
 
 @task
-def smoke() -> Task:
+def smoke(prompt_variant: str = "base") -> Task:
+    if prompt_variant not in {"base", "careful"}:
+        raise ValueError("Unknown smoke prompt variant")
     rows = json.loads((ROOT / "tasks/smoke.json").read_text())
     return Task(
         dataset=[
@@ -28,14 +30,18 @@ def smoke() -> Task:
                 id=row["id"],
                 input=row["prompt"],
                 target=row["expected"],
-                metadata={"category": row["category"], "fixture": "tasks/smoke.json"},
+                metadata={"category": row["category"], "fixture": "tasks/smoke.json", "prompt_variant": prompt_variant},
             )
             for row in rows
         ],
-        solver=generate(),
+        solver=(
+            generate()
+            if prompt_variant == "base"
+            else [system_message("Think through the practical goal and any relevant constraints before answering. Follow the user's requested answer format exactly."), generate()]
+        ),
         scorer=match(location="exact"),
         display_name="Mattbench smoke: pinned no-tool questions",
-        version="1",
+        version="2",
     )
 
 

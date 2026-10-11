@@ -20,10 +20,17 @@ def passed(value: object) -> bool | None:
 
 def main() -> None:
     rows = []
-    for path in sorted(LOG_DIR.glob("*.eval")):
+    for path in sorted(LOG_DIR.rglob("*.eval")):
         log = read_eval_log(path)
         for sample in log.samples or []:
             scores = {name: score.value for name, score in (sample.scores or {}).items()}
+            score_metadata = {
+                name: {
+                    key: value for key, value in (score.metadata or {}).items()
+                    if key in {"harness_tool_calls", "harness_tool_errors", "harness_tool_names"}
+                }
+                for name, score in (sample.scores or {}).items()
+            }
             usage = {
                 model: entry.model_dump(
                     include={"input_tokens", "output_tokens", "total_tokens", "total_cost"}
@@ -37,6 +44,7 @@ def main() -> None:
                     "eval_id": log.eval.eval_id,
                     "sample_id": sample.id,
                     "category": (sample.metadata or {}).get("category"),
+                    "prompt_variant": (sample.metadata or {}).get("prompt_variant", "base"),
                     "status": log.status,
                     "model": log.eval.model,
                     "concrete_response_model": getattr(sample.output, "model", None),
@@ -48,12 +56,13 @@ def main() -> None:
                     "model_args": log.eval.model_args,
                     "inspect_version": (log.eval.packages or {}).get("inspect_ai"),
                     "scores": scores,
+                    "score_metadata": score_metadata,
                     "passed": all(passed(value) is True for value in scores.values()) if scores else None,
                     "latency_seconds": sample.total_time,
                     "usage": usage,
                     "tool_calls": sum(event.event == "tool" for event in sample.events),
                     "started_at": sample.started_at,
-                    "log_file": path.name,
+                    "log_file": str(path.relative_to(LOG_DIR)),
                 }
             )
     output = LOG_DIR / "summary.json"
