@@ -28,7 +28,7 @@ The owner has a local OpenAI-compatible FreeToken service and an OpenRouter work
 - Compare a base prompt with a revised prompt on the same pinned tasks. Show raw per-task outcomes and metadata, not only an aggregate.
 - OpenRouter calls require an explicit dollar cap and maximum call count; local runs never fall back to a paid route.
 - Store credentials, raw traces, and private values outside Git. Publish only sanitized summary data.
-- The benchmark engine is Inspect AI while Promptfoo remains as a historical baseline until the pilot decision is recorded.
+- The benchmark engine is Inspect AI. Promptfoo remains as a historical baseline after the replacement pilot.
 
 ## Brand Commitments
 

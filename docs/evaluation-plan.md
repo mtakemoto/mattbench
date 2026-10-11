@@ -75,4 +75,4 @@ Use fresh synthetic state for every run. Randomize candidate order if shared inf
 4. Define one read-only HA grader and one coding grader before expanding to the fixed first-round suite. For writes and chained operations, run real ha-mcp with a fresh synthetic Home Assistant instance and verify that the container network cannot reach production Home Assistant.
 5. Run the screen, inspect failures, then run finalist repeats and write a short decision report.
 
-The synthetic smoke, hosted smoke, local FreeToken smoke, and one read-only synthetic Home Assistant MCP case have completed. The HA case passed once with the local Qwen setup; see [the run report](first-ha-local.md). No write or coding benchmark has run, and no model recommendation has been established.
+The initial smoke cases, a read-only synthetic MCP case, a real ha-mcp chained write against disposable Home Assistant, a disposable coding repair, and a Pi instruction-scope case have run. See the [Inspect pilot report](inspect-pilot.md). The local model passed the HA and coding pilots but failed the Pi instruction assertion; no broad model recommendation follows from this small set.

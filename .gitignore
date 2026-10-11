@@ -2,12 +2,15 @@
 .env
 .env.*
 !.env.example
+.aws
+.playwright-cli/
+.impeccable/review/
 *token*
 *secret*
 
 # Raw runs and generated state may contain private tool responses
 results/
-runs/
+/runs/
 artifacts/
 traces/
 backups/

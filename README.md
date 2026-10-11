@@ -1,14 +1,16 @@
 # Personal agent benchmarks
 
-Planning workspace for comparing models and agent setups on tasks that matter here: Home Assistant investigation through `homeassistant-ai/ha-mcp`, safe smart-home changes in an isolated test home, and coding in a real repository. The aim is a useful decision from a small number of paid runs, not a public leaderboard.
+Personal evaluation workspace for comparing models and agent setups on tasks that matter here: Home Assistant investigation through `homeassistant-ai/ha-mcp`, safe smart-home changes in an isolated test home, and coding in a disposable repository. The aim is a useful decision from a small number of bounded runs, not a public leaderboard.
 
 The first two no-tool cases are in [tasks/smoke.json](tasks/smoke.json). [Promptfoo](https://www.promptfoo.dev/docs/configuration/guide/) is pinned at `0.124.1` for a local smoke run; [smoke.py](smoke.py) remains an independent offline grader. Start with [the handoff](docs/context-handoff.md), [the evaluation plan](docs/evaluation-plan.md), [the benchmark framework review](docs/benchmark-framework-review.md), and [the ha-mcp test review](docs/upstream-ha-mcp-review.md).
 
-Two planned [agent instruction cases](docs/agent-instruction-benchmarks.md) cover ambiguous rule scope and discovering the active agent harness's documented user-wide instruction file. They are pinned but unrun; the current Home Assistant provider cannot execute file-editing agent tasks.
+Two [agent instruction cases](docs/agent-instruction-benchmarks.md) cover ambiguous rule scope and discovering the active agent harness's documented user-wide instruction file. The first ran under Pi in a disposable Inspect sandbox and failed its scoped assertion. The second remains unrun.
 
 ## Inspect AI replacement pilot
 
 [Inspect AI](https://inspect.aisi.org.uk/) `0.3.278` is now the primary engine for new benchmarks. It ran the smoke questions, a disposable coding repair, real ha-mcp against a synthetic Home Assistant container, and an actual Pi agent instruction task. The [pilot report](docs/inspect-pilot.md) records the results and limits. The Pi task failed its scoped instruction assertion; the harness and grading path worked. Install the pinned Python dependencies from [requirements-inspect.txt](requirements-inspect.txt) in an ignored `.venv`, then run `.venv/bin/python scripts/run-inspect-local.py`. Run `.venv/bin/python scripts/inspect-report.py` to export dashboard-ready, non-secret fields to ignored `artifacts/inspect/summary.json`; use `.venv/bin/inspect view --log-dir artifacts/inspect` for detailed local logs. Local launchers have no paid-provider fallback.
+
+The new [Svelte benchmark console](web/README.md) selects a FreeToken, OpenRouter, or private OpenAI-compatible model, launches the pinned Inspect smoke set, and visualizes task-level model × prompt results. From `web/`, run `npm ci` and `npm run dev -- --host 127.0.0.1`; open `http://127.0.0.1:5173`. The app runs on loopback and requires a separate workspace cap confirmation before a paid OpenRouter launch. No paid call was made to build or verify the console.
 
 ## Run the Promptfoo smoke test
 
