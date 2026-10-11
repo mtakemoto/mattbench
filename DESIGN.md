@@ -7,7 +7,7 @@ colors:
   coral-miss: "#ba553e"
   dark-canvas: "#161a19"
   dark-rail: "#111614"
-  dark-masthead: "#1b231e"
+  dark-header: "#1b231e"
   dark-panel: "#202922"
   dark-control: "#2c382e"
   dark-field: "#121b15"
@@ -23,8 +23,7 @@ colors:
   pass-text: "#366e37"
   miss-text: "#b64430"
   paid-guard: "#362f26"
-  dial-ring: "#81945d"
-  dial-segment: "#698749"
+  highlighted-choice-border: "#81945d"
   control-muted: "#70866d"
   pass-signal: "#70a344"
   score-fill: "#8fad38"
@@ -42,10 +41,10 @@ colors:
 typography:
   display:
     fontFamily: "Bricolage Grotesque Variable, sans-serif"
-    fontSize: "clamp(2.7rem, 4vw, 4.6rem)"
+    fontSize: "32px"
     fontWeight: 800
-    lineHeight: 0.97
-    letterSpacing: "-.038em"
+    lineHeight: 1
+    letterSpacing: "-.03em"
   headline:
     fontFamily: "Bricolage Grotesque Variable, sans-serif"
     fontSize: "29px"
@@ -74,12 +73,12 @@ typography:
   compact-body:
     fontFamily: "DM Sans Variable, sans-serif"
     fontSize: "11px"
+  empty-title:
+    fontFamily: "DM Sans Variable, sans-serif"
+    fontSize: "14px"
   control:
     fontFamily: "DM Sans Variable, sans-serif"
     fontSize: "13px"
-  intro:
-    fontFamily: "DM Sans Variable, sans-serif"
-    fontSize: "14px"
   mobile-brand:
     fontFamily: "Bricolage Grotesque Variable, sans-serif"
     fontSize: "21px"
@@ -88,7 +87,7 @@ typography:
     fontSize: "26px"
   mobile-display:
     fontFamily: "Bricolage Grotesque Variable, sans-serif"
-    fontSize: "2.65rem"
+    fontSize: "25px"
   empty-symbol:
     fontFamily: "Bricolage Grotesque Variable, sans-serif"
     fontSize: "42px"
@@ -144,9 +143,9 @@ components:
 
 **Creative North Star: "The Operator Board"**
 
-The current console pairs a dark control surface with a warm paper report surface. Lime marks the active path through a run, while the paper area keeps task outcomes and measurements easy to scan. The masthead is loud and graphic; the controls and results are dense, explicit, and restrained.
+The console pairs a dark control surface with a warm paper report surface. Lime marks active work, while the paper area keeps task outcomes and measurements easy to scan. A compact header shows the workspace name and live counts, placing controls and results near the top of the page.
 
-This is the first code-led visual direction, not an owner-approved brand identity. Its reusable character is a bright, instrument-like working surface with visible run identity and task-level evidence. The circular masthead dial reads as a timing mark; it does not encode benchmark progress.
+This is the first code-led visual direction, not an owner-approved brand identity. Its reusable character is a bright, instrument-like working surface with visible run identity and task-level evidence. The owner’s direction is “form and function, not sacrificing one for another”: visual character should serve the task without taking space from it.
 
 **Key Characteristics:**
 
@@ -161,8 +160,8 @@ The palette is warm black and cream with a sharp lime signal.
 
 ### Primary
 
-- **Signal Lime** (`{colors.signal-lime}`) marks the active source, selected controls, run action, small status lights, and masthead emphasis. **Signal Lime Hover** (`{colors.signal-lime-hover}`) is the brighter interactive state.
-- **Dial Ring and Segment** (`{colors.dial-ring}`, `{colors.dial-segment}`) give the ornamental dial two quieter green marks. **Control Muted** (`{colors.control-muted}`) serves quiet control edges and icons.
+- **Signal Lime** (`{colors.signal-lime}`) marks the active source, selected controls, run action, small status lights, and the header period. **Signal Lime Hover** (`{colors.signal-lime-hover}`) is the brighter interactive state.
+- **Highlighted Choice Border** (`{colors.highlighted-choice-border}`) outlines the default all-cases choice. **Control Muted** (`{colors.control-muted}`) serves quiet control edges and icons.
 
 ### Secondary
 
@@ -172,7 +171,7 @@ The palette is warm black and cream with a sharp lime signal.
 
 ### Neutral
 
-- **Dark Canvas, Rail, Masthead, and Panel** (`{colors.dark-canvas}`, `{colors.dark-rail}`, `{colors.dark-masthead}`, `{colors.dark-panel}`) separate the frame, navigation, introduction, and work area by tone.
+- **Dark Canvas, Rail, Header, and Panel** (`{colors.dark-canvas}`, `{colors.dark-rail}`, `{colors.dark-header}`, `{colors.dark-panel}`) separate the frame, navigation, workspace summary, and work area by tone.
 - **Dark Control, Field, and Selected** (`{colors.dark-control}`, `{colors.dark-field}`, `{colors.dark-selected}`) differentiate interactive states within the work area.
 - **Light Panel and Sheet** (`{colors.light-panel}`, `{colors.light-sheet}`) make the report feel like an inserted paper record.
 - **Light and Dark Text** (`{colors.light-text}`, `{colors.dark-text}`), their muted counterparts, and the two border colors support readable hierarchy on each surface.
@@ -190,30 +189,30 @@ The broad, tightly spaced display face gives the board its voice. The simpler bo
 
 ### Hierarchy
 
-- **Display** (`{typography.display}`): short masthead statement, with one lime phrase.
+- **Display** (`{typography.display}`): compact workspace title with a lime period.
 - **Headline** (`{typography.headline}`): work and report section headings; the small colored period is an accent, not a substitute for the title.
-- **Body** (`{typography.body}`): compact explanations around controls and the scorecard. The masthead paragraph is larger (14px, line-height 1.55).
+- **Body** (`{typography.body}`): compact explanations around controls and the scorecard.
 - **Label** (`{typography.label}`): uppercase system labels and status tags.
 - **Measure** (`{typography.measure}`): tabular scores, times, tokens, and cost. Numeric cells use tabular figures.
-- **Small control and mobile steps** (`{typography.nano}`, `{typography.micro}`, `{typography.compact-body}`, `{typography.control}`, `{typography.intro}`, `{typography.mobile-brand}`, `{typography.mobile-headline}`, `{typography.mobile-display}`, `{typography.empty-symbol}`): the actual compact labels, introductory copy, phone headings, and empty-state mark. These are component-specific steps, not interchangeable body sizes.
+- **Small control and mobile steps** (`{typography.nano}`, `{typography.micro}`, `{typography.compact-body}`, `{typography.control}`, `{typography.empty-title}`, `{typography.mobile-brand}`, `{typography.mobile-headline}`, `{typography.mobile-display}`, `{typography.empty-symbol}`): the actual compact labels, empty-state title, phone headings, and empty-state mark. These are component-specific steps, not interchangeable body sizes.
 
 **The Measurement Rule.** Put exact values in a mono treatment near the task or run they describe; keep explanatory prose in DM Sans.
 
 ## Layout
 
-The desktop shell uses a 220px navigation rail and a flexible main column. At 1350px and below, the rail contracts to 68px. The work area places a 390–430px dark setup panel beside a flexible light report panel; at 900px and below, those panels stack. At 620px and below, navigation becomes a 61px top strip, the panels use a 17px horizontal inset, and the header type reduces to 2.65rem. The page has a 320px minimum width.
+The desktop shell uses a 220px navigation rail and a flexible main column. At 1350px and below, the rail contracts to 68px. The compact workspace header is about 92px tall and presents task and run counts. The work area places a 390–430px dark setup panel beside a flexible light report panel; at 900px and below, those panels stack. At 620px and below, navigation becomes a 61px top strip, the header wraps with a 25px title, and the panels use a 17px horizontal inset. The page has a 320px minimum width.
 
-The source and prompt options use three equal columns with a 7px gap. Fields have a 27px bottom rhythm. The scorecard table keeps a 680px minimum width inside its own horizontal scroll container, protecting the page from horizontal overflow at phone width. The desktop and 390px review captures show the rail, masthead, and control stack following these shifts.
+The source and prompt options use three equal columns with a 7px gap. Fields have a 27px bottom rhythm. The scorecard table keeps a 680px minimum width inside its own horizontal scroll container, protecting the page from horizontal overflow at phone width. The compact header puts the case menu and scorecard much higher in the first viewport.
 
 ## Elevation & Depth
 
-The board is mostly flat. Tonal surfaces and 1px borders separate major areas and controls. The dial has two inset rings, status lights have a restrained glow, and the primary button lifts by 2px with a shadow on hover. The search field gets a 2px lime focus halo. These effects communicate interaction or instrument detail rather than a floating-card hierarchy.
+The board is mostly flat. Tonal surfaces and 1px borders separate major areas and controls. Status lights have a restrained glow, and the primary button lifts by 2px with a shadow on hover. The search field gets a 2px lime focus halo. These effects communicate interaction rather than decoration.
 
 **The Flat Record Rule.** Keep report data on the cream plane; use borders and spacing to separate rows before adding lift.
 
 ## Shapes
 
-Controls use compact rounded rectangles: 8px fields and report containers, 9px navigation and choice controls, and a 10px paid guard. Badges have 4px corners; small filter buttons, nested inputs, and message trays use the documented 5px, 6px, and 7px steps. Model selection dots, status lights, and the masthead dial are circular. The brand mark is three tilted lime bars with uneven heights and a 1px lower cut. Report rows stay rectangular and rule-separated.
+Controls use compact rounded rectangles: 8px fields and report containers, 9px navigation and choice controls, and a 10px paid guard. Badges have 4px corners; small filter buttons, nested inputs, and message trays use the documented 5px, 6px, and 7px steps. Model selection dots and status lights are circular. The brand mark is three tilted lime bars with uneven heights and a 1px lower cut. Report rows stay rectangular and rule-separated.
 
 ## Components
 
@@ -233,7 +232,7 @@ Controls use compact rounded rectangles: 8px fields and report containers, 9px n
 - **Scorecard:** a light sheet (`{components.scorecard}`) with a thin border, small mono column labels, row rules, explicit PASS/MISS/UNSCORED/NOT RUN words, and tabular measurements. Each row offers Run details; the detail panel opens below the table and displays exact run metadata.
 - **Paid guard:** warm brown inset panel (`{components.paid-guard}`) for hosted cap and call-limit controls.
 - **Navigation:** dark rail with icon and text links. The active item uses a green fill and pale lime text. At compact widths, the rail shows icons; at phone width, it becomes a top strip.
-- **Masthead dial:** an ornamental circular timing mark with inset rings. It has no data or progress semantics and is hidden from assistive technology.
+- **Workspace header:** a compact title with counts of pinned cases and recorded runs. It uses the same dark surface and display type as the rest of the console.
 
 ## Do's and Don'ts
 
@@ -246,6 +245,6 @@ Controls use compact rounded rectangles: 8px fields and report containers, 9px n
 
 ### Don't:
 
-- **Don't** turn the dial into a progress or quality score without a real data definition.
+- **Don't** add a large decorative hero above the run controls and results.
 - **Don't** imply model superiority from a tiny smoke suite.
 - **Don't** rely on shadows to structure the report surface.

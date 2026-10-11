@@ -1,14 +1,9 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-11T08:54:15Z",
+  "generatedAt": "2026-10-11T21:28:44Z",
   "title": "Design System: mattbench",
   "extensions": {
     "shadows": [
-      {
-        "name": "dial-inset-rings",
-        "value": "inset 0 0 0 12px #1b231e, inset 0 0 0 13px #596b5c",
-        "purpose": "Concentric detail inside the decorative masthead dial."
-      },
       {
         "name": "run-button-hover",
         "value": "0 8px 18px #101b104d",
@@ -22,7 +17,7 @@
       {
         "name": "status-glow",
         "value": "0 0 9px #d8ee6b65",
-        "purpose": "Light the small rail and engine status dots."
+        "purpose": "Light the small rail status dot."
       }
     ],
     "motion": [
@@ -127,7 +122,7 @@
   ],
   "narrative": {
     "northStar": "The Operator Board",
-    "overview": "The current console pairs a dark control surface with a warm paper report surface. Lime marks the active path through a run, while the paper area keeps task outcomes and measurements easy to scan. The masthead is loud and graphic; the controls and results are dense, explicit, and restrained.\n\nThis is the first code-led visual direction, not an owner-approved brand identity. Its reusable character is a bright, instrument-like working surface with visible run identity and task-level evidence. The circular masthead dial reads as a timing mark; it does not encode benchmark progress.",
+    "overview": "The console pairs a dark control surface with a warm paper report surface. Lime marks active work, while the paper area keeps task outcomes and measurements easy to scan. A compact header shows the workspace name and live counts, placing controls and results near the top of the page.\n\nThis is the first code-led visual direction, not an owner-approved brand identity. Its reusable character is a bright, instrument-like working surface with visible run identity and task-level evidence. The owner’s direction is “form and function, not sacrificing one for another”: visual character should serve the task without taking space from it.",
     "keyCharacteristics": [
       "Dark operation area beside a cream result sheet.",
       "Strong display type for short declarations; compact monospace for measurements and system labels.",
@@ -158,7 +153,7 @@
       "Do use the established 1350px, 900px, and 620px transitions when extending this console shell."
     ],
     "donts": [
-      "Don't turn the dial into a progress or quality score without a real data definition.",
+      "Don't add a large decorative hero above the run controls and results.",
       "Don't imply model superiority from a tiny smoke suite.",
       "Don't rely on shadows to structure the report surface."
     ]

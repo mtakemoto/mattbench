@@ -115,7 +115,7 @@
       if (!response.ok) throw new Error(body.error || 'Catalog unavailable.');
       catalog = body.models;
       if (!catalog.some((m) => m.id === selectedModel)) selectedModel = source === 'freetoken' ? catalog.find((m) => m.id === data.sources.freetoken.defaultModel)?.id || catalog[0]?.id || '' : '';
-    } catch (cause) { if (requestId === catalogRequest) { catalog = []; selectedModel = ''; catalogError = cause instanceof Error ? cause.message : 'Catalog unavailable.'; } }
+    } catch (cause) { if (requestId === catalogRequest) { catalog = []; selectedModel = ''; const reason = cause instanceof Error ? cause.message : 'Catalog unavailable.'; catalogError = reason === 'fetch failed' ? source === 'freetoken' ? 'FreeToken is unavailable. Start it and retry.' : source === 'compatible' ? 'Could not reach this endpoint. Check its address and retry.' : 'Could not reach OpenRouter. Retry in a moment.' : reason; } }
     finally { if (requestId === catalogRequest) loading = false; }
   }
   function chooseSource(next: Source) { ++catalogRequest; source = next; query = ''; selectedModel = ''; catalog = []; catalogError = ''; runError = ''; loading = false; if (next !== 'compatible') void loadModels(); }
@@ -136,14 +136,13 @@
   <aside class="rail" aria-label="Primary navigation">
     <a class="brand" href="#top" aria-label="mattbench home"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>matt<span>bench</span></a>
     <nav><a class:active={activeView === 'run'} href="#run" aria-current={activeView === 'run' ? 'page' : undefined}><ArrowUpRight size={19} aria-hidden="true"/>Run a benchmark</a><a class:active={activeView === 'results'} href="#report" aria-current={activeView === 'results' ? 'page' : undefined}><ChartNoAxesCombined size={19} aria-hidden="true"/>Results</a><a class:active={activeView === 'activity'} href="#activity" aria-current={activeView === 'activity' ? 'page' : undefined}><Clock3 size={19} aria-hidden="true"/>Activity</a></nav>
-    <div class="rail-foot"><i></i> LOCAL CONSOLE <span>v0.1</span></div>
+    <div class="rail-foot"><i></i> LOCAL CONSOLE</div>
   </aside>
   <main id="top">
-    <header class="topbar"><span>BENCH LAB <i>/</i> CONTROL ROOM</span><span class="engine"><i></i> INSPECT AI ENGINE <em></em> PILOT BUILD</span></header>
-    <section class="masthead"><div><h1>Make your models<br /><em>prove it.</em></h1><p>Run the same task with a different model or prompt. See exactly what passed, how long it took, and what it used.</p></div><div class="dial" aria-hidden="true"><span>MB</span><small>MEASURE<br />THEN MOVE</small></div></section>
+    <header class="console-header"><h1>Benchmark console<span>.</span></h1><div class="console-facts"><span><strong>{availableCases.length}</strong> pinned cases</span><span><strong>{runs.length}</strong> recorded runs</span><span>Inspect AI</span></div></header>
       <div class:single={activeView !== 'run'} class="workspace">
       <section class="run-panel" class:view-hidden={activeView !== 'run'} id="run" aria-labelledby="run-title">
-        <div class="section-head"><div><h2 id="run-title">Set up a run<span>.</span></h2><p>One pinned case set. One selected model. A clean comparison.</p></div><b>{visibleCases.length} {visibleCases.length === 1 ? 'TASK' : 'TASKS'}</b></div>
+        <div class="section-head"><div><h2 id="run-title">Set up a run<span>.</span></h2></div><b>{visibleCases.length} {visibleCases.length === 1 ? 'TASK' : 'TASKS'}</b></div>
         <div class="field case-field"><div class="field-head"><strong>Choose a benchmark</strong><span>Pinned cases · {availableCases.length} total</span></div><div class="case-options" role="group" aria-label="Benchmark selection">
           <button class="case-option everything" class:selected={caseId === 'all'} type="button" aria-pressed={caseId === 'all'} onclick={() => caseId = 'all'}><span><strong>Run everything</strong><small>Smoke questions and every Home Assistant case</small></span><b>{availableCases.length} TASKS</b></button>
           <button class="case-option" class:selected={caseId === 'smoke'} type="button" aria-pressed={caseId === 'smoke'} onclick={() => caseId = 'smoke'}><span><strong>Smoke questions</strong><small>{availableCases.filter((entry) => entry.suite === 'smoke').length} quick reasoning checks</small></span><b>SMOKE</b></button>

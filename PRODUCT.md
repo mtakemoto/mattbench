@@ -32,7 +32,7 @@ The owner has a local OpenAI-compatible FreeToken service and an OpenRouter work
 
 ## Brand Commitments
 
-The owner asked for a bold, fun first visual direction. The product name is currently mattbench; no logo or external brand assets are supplied.
+The owner asked for a bold, fun first visual direction and later specified “form and function, not sacrificing one for another.” The console should look and feel good without delaying the task or wasting space. The product name is currently mattbench; no external brand assets are supplied.
 
 ## Evidence on Hand
 
