@@ -1,0 +1,9 @@
+[
+  {
+    "id": "north_room_coordinator_target",
+    "category": "ha_mcp_readonly",
+    "prompt": "Using the Home Assistant tools, what is the North Room Coordinator's target temperature in degrees Fahrenheit? Do not change any state. Reply with only the number.",
+    "expected": "70",
+    "required_entity_id": "climate.north_room_coordinator"
+  }
+]

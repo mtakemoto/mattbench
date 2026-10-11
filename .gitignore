@@ -1,0 +1,26 @@
+# Credentials and local configuration; .env.example contains names only.
+.env
+.env.*
+!.env.example
+*token*
+*secret*
+
+# Raw runs and generated state may contain private tool responses
+results/
+runs/
+artifacts/
+traces/
+backups/
+.promptfoo/
+promptfoo.db
+logs/
+*.eval
+
+# Python and editor state
+.venv/
+node_modules/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.pyc
+.DS_Store

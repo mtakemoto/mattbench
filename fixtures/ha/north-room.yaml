@@ -1,0 +1,57 @@
+# Fictional Synthetic Home inventory. No production identifiers or topology.
+areas:
+  - name: North Room
+    id: north_room
+devices:
+  - name: North Room Coordinator
+    id: north_room_coordinator
+    area: north_room
+    info:
+      model: Virtual thermostat
+      manufacturer: Synthetic Home
+  - name: North Room Indoor Head
+    id: north_room_head
+    area: north_room
+    info:
+      model: Virtual heat pump head
+      manufacturer: Synthetic Home
+entities:
+  - name: North Room Coordinator
+    id: climate.north_room_coordinator
+    area: north_room
+    device: north_room_coordinator
+    state: heat
+    attributes:
+      unit_of_measurement: "\xB0F"
+      supported_features:
+        - climate.ClimateEntityFeature.TARGET_TEMPERATURE
+      hvac_modes:
+        - heat
+        - "off"
+      hvac_action: heating
+      current_temperature: 71
+      target_temperature: 70
+  - name: North Room Indoor Head
+    id: climate.north_room_head
+    area: north_room
+    device: north_room_head
+    state: heat
+    attributes:
+      unit_of_measurement: "\xB0F"
+      supported_features:
+        - climate.ClimateEntityFeature.TARGET_TEMPERATURE
+      hvac_modes:
+        - heat
+        - "off"
+      hvac_action: heating
+      current_temperature: 72
+      target_temperature: 74
+  - name: North Room Temperature
+    id: sensor.north_room_temperature
+    area: north_room
+    device: north_room_coordinator
+    state: "71"
+    attributes:
+      native_unit_of_measurement: "\xB0F"
+      device_class: sensor.SensorDeviceClass.TEMPERATURE
+      state_class: sensor.SensorStateClass.MEASUREMENT

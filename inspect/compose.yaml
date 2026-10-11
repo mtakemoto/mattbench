@@ -1,0 +1,15 @@
+services:
+  default:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mattbench-inspect-sandbox:python3.12-v1
+    init: true
+    command: sleep infinity
+    working_dir: /workspace
+    network_mode: none
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 1.0

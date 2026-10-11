@@ -1,0 +1,53 @@
+---
+# Fictional inventory for the disposable Inspect/ha-mcp pilot.
+areas:
+  - name: North Room
+    id: north_room
+devices:
+  - name: North Room Coordinator
+    id: north_room_coordinator
+    area: north_room
+    info:
+      model: Virtual thermostat
+      manufacturer: Synthetic Home
+  - name: North Room Indoor Head
+    id: north_room_head
+    area: north_room
+    info:
+      model: Virtual heat pump head
+      manufacturer: Synthetic Home
+entities:
+  - name: North Room Coordinator
+    id: climate.north_room_coordinator
+    area: north_room
+    device: north_room_coordinator
+    attributes:
+      unit_of_measurement: "\xB0F"
+      supported_features:
+        - climate.ClimateEntityFeature.TARGET_TEMPERATURE
+        - climate.ClimateEntityFeature.TURN_ON
+        - climate.ClimateEntityFeature.TURN_OFF
+      hvac_modes:
+        - "off"
+        - heat
+      hvac_mode: heat
+      hvac_action: heating
+      current_temperature: 71
+      target_temperature: 70
+  - name: North Room Indoor Head
+    id: climate.north_room_head
+    area: north_room
+    device: north_room_head
+    attributes:
+      unit_of_measurement: "\xB0F"
+      supported_features:
+        - climate.ClimateEntityFeature.TARGET_TEMPERATURE
+        - climate.ClimateEntityFeature.TURN_ON
+        - climate.ClimateEntityFeature.TURN_OFF
+      hvac_modes:
+        - "off"
+        - heat
+      hvac_mode: heat
+      hvac_action: heating
+      current_temperature: 72
+      target_temperature: 74

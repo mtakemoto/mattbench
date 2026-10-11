@@ -1,0 +1,14 @@
+[
+  {
+    "id": "strawberry_r_count",
+    "category": "reasoning_smoke",
+    "prompt": "How many times does the letter r appear in the word strawberry? Reply with only the number.",
+    "expected": "3"
+  },
+  {
+    "id": "car_wash_transport",
+    "category": "reasoning_smoke",
+    "prompt": "I need to wash my car. The car wash is 50 meters away. Should I walk or drive? Reply with only WALK or DRIVE.",
+    "expected": "DRIVE"
+  }
+]
