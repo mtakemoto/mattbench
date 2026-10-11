@@ -1,6 +1,9 @@
 {
   "private": true,
   "scripts": {
+    "web": "npm --prefix web run dev -- --host 127.0.0.1",
+    "web:build": "npm --prefix web run build",
+    "web:check": "npm --prefix web run check",
     "smoke": "bash scripts/run-smoke.sh",
     "smoke:openrouter": "bash scripts/run-openrouter-smoke.sh",
     "smoke:local": "bash scripts/run-local-smoke.sh",

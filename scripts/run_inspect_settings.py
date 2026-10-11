@@ -1,12 +1,40 @@
 """Local-only model settings shared by Inspect pilot launchers."""
 
 import json
+import ipaddress
 import os
 from pathlib import Path
 from urllib.parse import urlparse
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def compatible_base(value: str) -> str:
+    url = urlparse(value)
+    host = url.hostname or ""
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        if host != "localhost":
+            raise ValueError("Use localhost or a literal private or loopback IP address.") from None
+    else:
+        allowed = (
+            ipaddress.ip_network("127.0.0.0/8"), ipaddress.ip_network("10.0.0.0/8"),
+            ipaddress.ip_network("172.16.0.0/12"), ipaddress.ip_network("192.168.0.0/16"),
+        ) if address.version == 4 else (ipaddress.ip_network("::1/128"), ipaddress.ip_network("fc00::/7"))
+        if not any(address in network for network in allowed):
+            raise ValueError("Compatible endpoints must be on loopback or a private network.")
+    if (url.scheme != "http" or url.path.rstrip("/") != "/v1" or url.username
+            or url.password or url.query or url.fragment):
+        raise ValueError("Endpoint must be plain HTTP and end in /v1, without credentials or a query.")
+    return value.rstrip("/")
+
+
+def served_models(base: str) -> set[str]:
+    request = Request(base + "/models", headers={"Authorization": "Bearer local-no-secret"})
+    with urlopen(request, timeout=8) as response:
+        return {row["id"] for row in json.load(response).get("data", []) if isinstance(row.get("id"), str)}
 
 
 def local_settings() -> tuple[str, str]:

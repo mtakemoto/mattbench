@@ -1,0 +1,31 @@
+---
+# Fictional Study lamps. Each benchmark run loads this into a fresh disposable HA.
+areas:
+  - name: Study
+    id: study
+devices:
+  - name: Study Reading Lamp
+    id: study_reading_lamp
+    area: study
+  - name: Study Desk Lamp
+    id: study_desk_lamp
+    area: study
+entities:
+  - name: Study Reading Lamp
+    id: light.study_reading_lamp
+    area: study
+    device: study_reading_lamp
+    state: "on"
+    attributes:
+      supported_color_modes:
+        - onoff
+      color_mode: onoff
+  - name: Study Desk Lamp
+    id: light.study_desk_lamp
+    area: study
+    device: study_desk_lamp
+    state: "on"
+    attributes:
+      supported_color_modes:
+        - onoff
+      color_mode: onoff

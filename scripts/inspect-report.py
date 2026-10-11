@@ -20,6 +20,13 @@ def passed(value: object) -> bool | None:
 
 def main() -> None:
     rows = []
+    timing_by_eval = {}
+    for timing_path in (LOG_DIR / "ha-timing").glob("*.json"):
+        timing = json.loads(timing_path.read_text())
+        for eval_id in timing.get("eval_ids", []):
+            timing_by_eval[eval_id] = {key: timing.get(key) for key in (
+                "setup_seconds", "evaluation_seconds", "teardown_seconds", "total_wall_seconds"
+            )}
     for path in sorted(LOG_DIR.rglob("*.eval")):
         log = read_eval_log(path)
         for sample in log.samples or []:
@@ -59,6 +66,7 @@ def main() -> None:
                     "score_metadata": score_metadata,
                     "passed": all(passed(value) is True for value in scores.values()) if scores else None,
                     "latency_seconds": sample.total_time,
+                    "run_timing": timing_by_eval.get(log.eval.eval_id),
                     "usage": usage,
                     "tool_calls": sum(event.event == "tool" for event in sample.events),
                     "started_at": sample.started_at,

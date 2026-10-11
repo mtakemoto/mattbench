@@ -10,12 +10,11 @@ python3.12 -m venv .venv
 .venv/bin/python scripts/inspect-report.py
 ```
 
-Then install and run the web app:
+Then install and run the web app from the repository root:
 
 ```bash
-cd web
-npm ci
-npm run dev -- --host 127.0.0.1
+npm --prefix web ci
+npm run web
 ```
 
 Open `http://127.0.0.1:5173`. For a standalone server, run `npm run build`, then `HOST=127.0.0.1 PORT=4173 node build` from `web/`.
@@ -26,7 +25,7 @@ Open `http://127.0.0.1:5173`. For a standalone server, run `npm run build`, then
 - **OpenRouter:** Reads `OPENROUTER_API_KEY` from the same ignored `.env`. Its public model catalog powers search. Before running, enter the active workspace cap (up to the current $20 pilot ceiling) and explicitly confirm it. The cap must be configured at OpenRouter; this app does not dynamically stop a running API request based on spend. Base or careful makes two calls; compare both makes four. Model API retries are disabled.
 - **Other endpoint:** Enter a literal private or loopback HTTP address ending in `/v1` (for example, another local port or a private network model server). The app discovers served model IDs. This profile uses OpenAI-compatible chat completions and a local placeholder API key; endpoints requiring their own authentication are future work.
 
-The run button currently launches only the two pinned no-tool smoke tasks. The report also displays previous HA, coding, and Pi pilot activity when those logs are present. A two-question score is a workflow screen, not a model ranking. Costs appear only when Inspect reports them; local compute cost is not measured.
+The run button launches either the two pinned no-tool smoke tasks or one selected HA write case through real ha-mcp and a fresh disposable Synthetic Home container pair. HA cases currently accept FreeToken or a private compatible endpoint; paid OpenRouter HA runs remain disabled. The case menu and report columns come from the task manifests. Each HA result shows container setup and cleanup separately from model evaluation time. The report also displays previous coding and Pi pilot activity. A handful of cases screens the workflow, not a model ranking. Costs appear only when Inspect reports them; local compute cost is not measured.
 
 The app is for one owner on loopback. Do not expose it to a public network without adding authentication and a stronger endpoint access policy.
 

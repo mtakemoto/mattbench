@@ -1,11 +1,12 @@
 """Run one Inspect case against real ha-mcp and a disposable Synthetic Home.
 
-Requires Docker, local FreeToken, and network access to fetch the pinned public
-Synthetic Home source on first run. Never accepts a production HA URL or token.
+Requires Docker and a local/private OpenAI-compatible model for scored runs.
+Preflight needs no model. The first run fetches pinned public Synthetic Home
+source, then reuses an ignored local cache. No production HA URL or token.
 """
 
 import asyncio
-import io
+import argparse
 import inspect
 import json
 import os
@@ -20,12 +21,14 @@ from pathlib import Path
 from urllib.request import urlopen
 
 import aiohttp
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from inspect_ai import eval as run_eval
-from inspect_pilot import ha_chained
-from scripts.run_inspect_settings import local_settings, set_local_model_environment
+from inspect_pilot import ha_case, ha_cases
+from scripts.run_inspect_settings import compatible_base, served_models
 
 SYNTHETIC_SHA = "3a943b1346cad6c4d41f9c148921f87c9229bb0b"
 HA_IMAGE = "mattbench-synthetic-ha:2026.10.1-v1"
@@ -41,8 +44,15 @@ def docker(*args: str) -> str:
 
 def install_synthetic_component(config: Path) -> None:
     archive_url = f"https://github.com/allenporter/home-assistant-synthetic-home/archive/{SYNTHETIC_SHA}.tar.gz"
-    with urlopen(archive_url, timeout=60) as response:
-        archive = tarfile.open(fileobj=io.BytesIO(response.read()), mode="r:gz")
+    cache = ROOT / "artifacts/inspect/cache" / f"synthetic-home-{SYNTHETIC_SHA}.tar.gz"
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    if not cache.exists():
+        with urlopen(archive_url, timeout=60) as response:
+            data = response.read()
+        temporary = cache.with_suffix(".tmp")
+        temporary.write_bytes(data)
+        temporary.replace(cache)
+    archive = tarfile.open(cache, mode="r:gz")
     destination = config / "custom_components" / "synthetic_home"
     destination.mkdir(parents=True)
     prefix = f"home-assistant-synthetic-home-{SYNTHETIC_SHA}/custom_components/synthetic_home/"
@@ -82,7 +92,7 @@ def wait_http(container: str, timeout: int = 150) -> None:
     raise RuntimeError("Synthetic Home Assistant did not start")
 
 
-async def bootstrap(ha_url: str, password: str) -> str:
+async def bootstrap(ha_url: str, password: str, fixture_name: str) -> str:
     client_id = "http://127.0.0.1/"
     async with aiohttp.ClientSession() as session:
         async with session.get(f"{ha_url}/api/onboarding") as response:
@@ -113,7 +123,7 @@ async def bootstrap(ha_url: str, password: str) -> str:
         if flow.get("type") != "form":
             raise RuntimeError("Synthetic Home config flow did not present a form")
         async with session.post(f"{ha_url}/api/config/config_entries/flow/{flow['flow_id']}",
-                                headers=headers, json={"config_filename": "inspect-climate.yaml"}) as response:
+                                headers=headers, json={"config_filename": fixture_name}) as response:
             response.raise_for_status()
             result = await response.json()
         if result.get("type") != "create_entry":
@@ -131,9 +141,62 @@ def state(container: str, token: str, entity_id: str) -> dict:
     return json.loads(docker_python(container, source, json.dumps({"entity": entity_id, "token": token})))
 
 
+async def apply_preflight_action(container: str, action: dict, entities: list[str]) -> None:
+    """Exercise the same real ha-mcp stdio and service path used by Inspect."""
+    params = StdioServerParameters(command="docker", args=["exec", "-i", container, "ha-mcp"])
+    async with stdio_client(params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            tools = {tool.name for tool in (await session.list_tools()).tools}
+            if not {"ha_call_service", "ha_get_state"} <= tools:
+                raise RuntimeError("Pinned ha-mcp image is missing required tools")
+            data = dict(action["data"])
+            entity_id = data.pop("entity_id")
+            result = await session.call_tool("ha_call_service", {
+                "domain": action["domain"], "service": action["service"],
+                "entity_id": entity_id, "data": json.dumps(data),
+            })
+            if result.is_error:
+                raise RuntimeError("Synthetic ha-mcp service call failed")
+            for entity in entities:
+                readback = await session.call_tool("ha_get_state", {"entity_id": entity})
+                if readback.is_error:
+                    raise RuntimeError("Synthetic ha-mcp state read failed")
+
+
+def matches(actual: dict, wanted: dict) -> bool:
+    return all(matches(actual.get(key, {}), value) if isinstance(value, dict) else actual.get(key) == value
+               for key, value in wanted.items())
+
+
 def main() -> None:
-    base, model = local_settings()
-    set_local_model_environment(base)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--case", choices=sorted(ha_cases()), default="mxz_coordinator_target")
+    parser.add_argument("--source", choices=("freetoken", "compatible"), default="freetoken")
+    parser.add_argument("--model")
+    parser.add_argument("--base-url")
+    parser.add_argument("--run-id", default="")
+    parser.add_argument("--preflight-only", action="store_true", help="Verify fixture and service path without a model")
+    args = parser.parse_args()
+    if args.run_id and (not args.run_id.isdigit() or not 14 <= len(args.run_id) <= 20):
+        parser.error("Run ID must be a 14–20 digit UTC timestamp.")
+    case = ha_cases()[args.case]
+    if not args.preflight_only:
+        if not args.base_url or not args.model:
+            parser.error("Model and base URL are required for a benchmark run.")
+        base = compatible_base(args.base_url)
+        if args.model not in served_models(base):
+            parser.error("Selected model is not served at that endpoint.")
+    for key in ("OPENROUTER_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "FREETOKEN_API_KEY", "COMPATIBLE_API_KEY"):
+        os.environ.pop(key, None)
+    if not args.preflight_only:
+        os.environ[f"{args.source.upper()}_BASE_URL"] = base
+        os.environ[f"{args.source.upper()}_API_KEY"] = "local-no-secret"
+    clock_start = time.monotonic()
+    setup_done: float | None = None
+    eval_done: float | None = None
+    log_ids: list[str] = []
+    outcome = "failed"
     suffix = secrets.token_hex(5)
     network = f"mattbench-ha-{suffix}"
     ha_container = f"mattbench-ha-{suffix}"
@@ -142,7 +205,10 @@ def main() -> None:
         config = Path(temp) / "config"
         config.mkdir()
         (config / "configuration.yaml").write_text("default_config:\nhomeassistant:\n  unit_system: imperial\n")
-        shutil.copy2(ROOT / "fixtures/ha/inspect-climate.yaml", config / "inspect-climate.yaml")
+        fixture = ROOT / case["fixture"]
+        if not fixture.is_file() or fixture.parent != ROOT / "fixtures/ha":
+            raise RuntimeError("Case fixture must be a pinned file in fixtures/ha")
+        shutil.copy2(fixture, config / fixture.name)
         install_synthetic_component(config)
         docker("network", "create", "--internal", network)
         try:
@@ -151,24 +217,19 @@ def main() -> None:
                    "--env", "TZ=UTC", HA_IMAGE)
             wait_http(ha_container)
             bootstrap_source = "import asyncio, aiohttp\n" + inspect.getsource(bootstrap)
-            bootstrap_source += "\nimport sys\nprint(asyncio.run(bootstrap('http://127.0.0.1:8123', sys.stdin.read().strip())))\n"
+            bootstrap_source += f"\nimport sys\nprint(asyncio.run(bootstrap('http://127.0.0.1:8123', sys.stdin.read().strip(), {fixture.name!r})))\n"
             token = docker_python(ha_container, bootstrap_source, secrets.token_urlsafe(24))
             deadline = time.monotonic() + 30
             while time.monotonic() < deadline:
                 try:
-                    coordinator = state(ha_container, token, "climate.north_room_coordinator")
-                    head = state(ha_container, token, "climate.north_room_head")
+                    actual = {entity: state(ha_container, token, entity) for entity in case["initial"]}
                     break
                 except Exception:
                     time.sleep(1)
             else:
-                raise RuntimeError("Synthetic climate entities did not appear")
-            if coordinator["attributes"].get("temperature") != 70 or head["attributes"].get("temperature") != 74:
-                raise RuntimeError(
-                    "Synthetic climate initial targets differ: "
-                    f"coordinator={coordinator['attributes'].get('temperature')!r}, "
-                    f"head={head['attributes'].get('temperature')!r}"
-                )
+                raise RuntimeError("Synthetic fixture entities did not appear")
+            if not all(matches(actual[entity], wanted) for entity, wanted in case["initial"].items()):
+                raise RuntimeError("Synthetic fixture initial state differs from pinned assertions")
             env_file = Path(temp) / "mcp.env"
             env_file.write_text(f"HOMEASSISTANT_URL=http://{ha_container}:8123\nHOMEASSISTANT_TOKEN={token}\n")
             env_file.chmod(0o600)
@@ -177,21 +238,46 @@ def main() -> None:
             os.environ["MATTBENCH_SYNTHETIC_HA_CONTAINER"] = ha_container
             os.environ["MATTBENCH_SYNTHETIC_HA_TOKEN"] = token
             os.environ["MATTBENCH_SYNTHETIC_MCP_CONTAINER"] = mcp_container
-            print("Running real ha-mcp against disposable Synthetic Home", flush=True)
+            setup_done = time.monotonic()
+            if args.preflight_only:
+                asyncio.run(apply_preflight_action(mcp_container, case["action"], list(case["expected"])))
+                actual = {entity: state(ha_container, token, entity) for entity in case["expected"]}
+                if not all(matches(actual[entity], wanted) for entity, wanted in case["expected"].items()):
+                    raise RuntimeError("Synthetic service did not produce pinned final state")
+                eval_done = time.monotonic()
+                outcome = "preflight_passed"
+                print(f"{args.case}: deterministic real ha-mcp preflight passed", flush=True)
+                return
+            print(f"Running {args.case} through real ha-mcp and disposable Synthetic Home", flush=True)
             logs = run_eval(
-                tasks=[ha_chained()], model=f"openai-api/freetoken/{model}",
+                tasks=[ha_case(args.case)], model=f"openai-api/{args.source}/{args.model}",
                 model_args={"strict_tools": False}, temperature=0, max_tokens=512,
                 max_retries=0, timeout=120, max_samples=1, max_tasks=1,
-                log_dir=str(ROOT / "artifacts/inspect"), display="plain",
+                log_dir=str(ROOT / "artifacts/inspect/ha" / (args.run_id or suffix)), display="plain",
             )
+            eval_done = time.monotonic()
             for log in logs:
+                log_ids.append(log.eval.eval_id)
                 print(f"{log.eval.task}: {log.status}; log={log.location}")
             if any(log.status != "success" for log in logs):
                 raise SystemExit(1)
+            outcome = "complete"
         finally:
+            cleanup_started = time.monotonic()
             subprocess.run(["docker", "exec", "-u", "0", ha_container, "chown", "-R", f"{os.getuid()}:{os.getgid()}", "/config"], capture_output=True)
             subprocess.run(["docker", "rm", "-f", mcp_container, ha_container], capture_output=True)
             subprocess.run(["docker", "network", "rm", network], capture_output=True)
+            finished = time.monotonic()
+            metrics = {
+                "case_id": args.case, "status": outcome, "eval_ids": log_ids,
+                "setup_seconds": round((setup_done or cleanup_started) - clock_start, 3),
+                "evaluation_seconds": round((eval_done or cleanup_started) - setup_done, 3) if setup_done else 0,
+                "teardown_seconds": round(finished - cleanup_started, 3),
+                "total_wall_seconds": round(finished - clock_start, 3),
+            }
+            timing_dir = ROOT / "artifacts/inspect/ha-timing"
+            timing_dir.mkdir(parents=True, exist_ok=True)
+            (timing_dir / f"{args.run_id or suffix}.json").write_text(json.dumps(metrics, indent=2) + "\n")
 
 
 if __name__ == "__main__":

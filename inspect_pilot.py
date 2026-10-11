@@ -91,7 +91,7 @@ def coding() -> Task:
 
 
 @scorer(metrics=[accuracy()])
-def synthetic_ha_state() -> object:
+def synthetic_ha_state(case: dict) -> object:
     async def score(state: TaskState, target: Target) -> Score:
         container = os.environ["MATTBENCH_SYNTHETIC_HA_CONTAINER"]
         token = os.environ["MATTBENCH_SYNTHETIC_HA_TOKEN"]
@@ -109,42 +109,88 @@ def synthetic_ha_state() -> object:
                 text=True, capture_output=True, check=True,
             )
             return json.loads(result.stdout)
-        coordinator = get_state("climate.north_room_coordinator")
-        head = get_state("climate.north_room_head")
-        correct = (
-            coordinator["attributes"].get("temperature") == 68
-            and head["attributes"].get("temperature") == 74
-        )
+        def matches(actual: dict, wanted: dict) -> bool:
+            return all(
+                matches(actual.get(key, {}), value) if isinstance(value, dict)
+                else actual.get(key) == value
+                for key, value in wanted.items()
+            )
+        correct = all(matches(get_state(entity_id), wanted) for entity_id, wanted in case["expected"].items())
+        trace_ok, trace_reason = safe_ha_trace(state.messages, case)
         return Score(
-            value=1 if correct else 0,
-            explanation=(
-                "Coordinator target changed to 68; indoor head remained at 74."
-                if correct else "Final synthetic climate targets did not match the pinned assertion."
-            ),
+            value=1 if correct and trace_ok else 0,
+            explanation=("Final synthetic states and tool sequence matched pinned assertions."
+                         if correct and trace_ok else
+                         "Final synthetic states did not match pinned assertions." if not correct else trace_reason),
         )
     return score
 
 
+def safe_ha_trace(messages: list, case: dict) -> tuple[bool, str]:
+    """Check each requested write and the readback sequence, including failed calls."""
+    calls = [call for message in messages for call in (getattr(message, "tool_calls", None) or [])]
+    action = case["action"]
+    expected_data = dict(action["data"])
+    expected_entity = expected_data.pop("entity_id")
+    writes = []
+    for index, call in enumerate(calls):
+        if call.function != "ha_call_service":
+            continue
+        args = call.arguments
+        if set(args) - {"domain", "service", "entity_id", "data", "return_response"}:
+            return False, "A service call included an unapproved target or parameter."
+        data = args.get("data") or {}
+        try:
+            data = json.loads(data) if isinstance(data, str) else data
+        except json.JSONDecodeError:
+            return False, "A service call contained invalid data."
+        if (args.get("domain"), args.get("service"), args.get("entity_id"), data) != (
+            action["domain"], action["service"], expected_entity, expected_data
+        ):
+            return False, "A service call did not match the allowed target and action."
+        writes.append(index)
+    if not writes:
+        return False, "The target service was not called."
+    first_write = writes[0]
+    if case.get("require_search") and not any(call.function == "ha_search" for call in calls[:first_write]):
+        return False, "No entity search preceded the write."
+    for entity in case.get("require_initial_read", []):
+        if not any(call.function == "ha_get_state" and call.arguments.get("entity_id") == entity
+                   for call in calls[:first_write]):
+            return False, "A required initial state read was missing."
+    for entity in case["expected"]:
+        if not any(call.function == "ha_get_state" and call.arguments.get("entity_id") == entity
+                   for call in calls[writes[-1] + 1:]):
+            return False, "A required state readback was missing."
+    return True, "Tool sequence matched the pinned case."
+
+
+def ha_cases() -> dict[str, dict]:
+    cases = json.loads((ROOT / "tasks/inspect-ha-cases.json").read_text())
+    return {case["id"]: case for case in cases}
+
+
 @task
-def ha_chained() -> Task:
+def ha_case(case_id: str = "mxz_coordinator_target") -> Task:
+    case = ha_cases()[case_id]
     container = os.environ["MATTBENCH_SYNTHETIC_MCP_CONTAINER"]
     server = mcp_server_stdio(name="synthetic_ha_mcp", command="docker", args=["exec", "-i", container, "ha-mcp"])
     return Task(
         dataset=[Sample(
-            id="north_room_coordinator_target",
-            input=(
-                "In the fictional North Room, find the Coordinator climate entity, read its "
-                "current target, set only that Coordinator's target temperature to 68 °F, "
-                "then read back both the Coordinator and Indoor Head. Do not change the "
-                "Indoor Head. Use the Home Assistant tools for each step."
-            ),
-            target="Coordinator target 68; Indoor Head target unchanged at 74",
-            metadata={"category": "ha_chained_pilot", "fixture": "fixtures/ha/inspect-climate.yaml"},
+            id=case_id,
+            input=case["prompt"],
+            target=case["target"],
+            metadata={"category": "ha_chained", "fixture": case["fixture"], "prompt_variant": "base"},
         )],
         solver=react(tools=[mcp_tools(server, tools=["ha_search", "ha_get_state", "ha_call_service"])]),
-        scorer=synthetic_ha_state(),
+        scorer=synthetic_ha_state(case),
         turn_limit=10,
         time_limit=180,
-        display_name="Mattbench HA: real ha-mcp against disposable Synthetic Home",
-        version="1",
+        display_name=f"Mattbench HA: {case['name']}",
+        version="3",
     )
+
+
+def ha_chained() -> Task:
+    """Historical pilot alias; use ha_case for new runs."""
+    return ha_case()

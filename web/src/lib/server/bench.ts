@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, mkdirSync, writeFileSync, openSync, closeSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, mkdirSync, writeFileSync, openSync, closeSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { spawn } from 'node:child_process';
 
@@ -8,7 +8,31 @@ const jobFile = join(artifactDir, 'job.json');
 
 export type Source = 'freetoken' | 'openrouter' | 'compatible';
 export type ModelOption = { id: string; name: string; contextLength?: number; promptPrice?: string; completionPrice?: string };
-export type Job = { id: string; status: 'running' | 'complete' | 'failed' | 'interrupted'; source: Source; model: string; variant: string; startedAt: string; finishedAt?: string; error?: string; pid?: number };
+export type Case = { id: string; name: string; suite: 'smoke' | 'ha'; fixture: string };
+export type Job = { id: string; status: 'running' | 'complete' | 'failed' | 'interrupted'; source: Source; model: string; variant: string; caseId: string; startedAt: string; finishedAt?: string; error?: string; pid?: number };
+
+export function cases(): Case[] {
+  const smoke = JSON.parse(readFileSync(join(root, 'tasks', 'smoke.json'), 'utf8')) as { id: string; name?: string }[];
+  const ha = JSON.parse(readFileSync(join(root, 'tasks', 'inspect-ha-cases.json'), 'utf8')) as { id: string; name: string; fixture: string }[];
+  return [
+    ...smoke.map((entry) => ({ id: entry.id, name: entry.name || entry.id.replaceAll('_', ' '), suite: 'smoke' as const, fixture: 'tasks/smoke.json' })),
+    ...ha.map((entry) => ({ id: entry.id, name: entry.name, suite: 'ha' as const, fixture: entry.fixture }))
+  ];
+}
+
+export function runTimings() {
+  const directory = join(root, 'artifacts', 'inspect', 'ha-timing');
+  if (!existsSync(directory)) return [];
+  const latest = new Map<string, { case_id: string; status: string; setup_seconds: number; evaluation_seconds: number; teardown_seconds: number; total_wall_seconds: number }>();
+  for (const file of readdirSync(directory).filter((file) => file.endsWith('.json')).sort().reverse()) {
+    const item = JSON.parse(readFileSync(join(directory, file), 'utf8'));
+    if (latest.has(item.case_id)) continue;
+    latest.set(item.case_id, { case_id: item.case_id, status: item.status, setup_seconds: item.setup_seconds,
+      evaluation_seconds: item.evaluation_seconds, teardown_seconds: item.teardown_seconds,
+      total_wall_seconds: item.total_wall_seconds });
+  }
+  return [...latest.values()];
+}
 
 function envFile(): Record<string, string> {
   const path = join(root, '.env');
@@ -80,7 +104,7 @@ export function rows() {
     latency_seconds: row.latency_seconds, usage: row.usage, tool_calls: row.tool_calls,
     score_metadata: row.score_metadata, started_at: row.started_at, fixture: row.fixture,
     inference: row.inference, inspect_version: row.inspect_version, task_version: row.task_version,
-    log_file: row.log_file
+    log_file: row.log_file, run_timing: row.run_timing
   }));
 }
 
@@ -99,11 +123,15 @@ export function currentJob(): Job | null {
   return job;
 }
 
-export function startJob(input: { source: Source; model: string; variant: 'base' | 'careful' | 'both'; baseUrl?: string; maxCalls: number; capUsd?: number; capConfirmed?: boolean }): Job {
+export function startJob(input: { source: Source; model: string; variant: 'base' | 'careful' | 'both'; caseId: string; baseUrl?: string; maxCalls: number; capUsd?: number; capConfirmed?: boolean }): Job {
   if (currentJob()?.status === 'running') throw new Error('A benchmark is already running.');
   if (!/^[\w./:-]{1,160}$/.test(input.model)) throw new Error('Choose a valid model ID from the catalog.');
   if (!['base', 'careful', 'both'].includes(input.variant)) throw new Error('Choose a prompt variant.');
-  const expectedCalls = input.variant === 'both' ? 4 : 2;
+  const haCase = cases().find((entry) => entry.id === input.caseId && entry.suite === 'ha');
+  if (input.caseId !== 'smoke' && !haCase) throw new Error('Choose a pinned benchmark case.');
+  if (haCase && input.variant !== 'base') throw new Error('Home Assistant cases currently use the base prompt.');
+  if (haCase && input.source === 'openrouter') throw new Error('Home Assistant write cases currently run against local or private models only.');
+  const expectedCalls = haCase ? 10 : input.variant === 'both' ? 4 : 2;
   if (input.maxCalls !== expectedCalls) throw new Error(`This selection makes exactly ${expectedCalls} calls.`);
   const config = settings();
   const base = input.source === 'openrouter' ? '' : compatibleBase(input.source === 'freetoken' ? config.localBase : input.baseUrl || '');
@@ -111,10 +139,12 @@ export function startJob(input: { source: Source; model: string; variant: 'base'
     throw new Error('OpenRouter needs an API key, an active workspace cap up to $20, and explicit cap confirmation.');
   }
   const id = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
-  const job: Job = { id, status: 'running', source: input.source, model: input.model, variant: input.variant, startedAt: new Date().toISOString() };
+  const job: Job = { id, status: 'running', source: input.source, model: input.model, variant: input.variant, caseId: input.caseId, startedAt: new Date().toISOString() };
   mkdirSync(artifactDir, { recursive: true });
   const logFd = openSync(join(artifactDir, `${id}.log`), 'w');
-  const args = [join(root, 'scripts', 'run-inspect-selected.py'), '--source', input.source, '--model', input.model, '--variant', input.variant, '--max-calls', String(expectedCalls), '--run-id', id];
+  const args = haCase
+    ? [join(root, 'scripts', 'run-inspect-ha-pilot.py'), '--case', input.caseId, '--source', input.source, '--model', input.model, '--run-id', id]
+    : [join(root, 'scripts', 'run-inspect-selected.py'), '--source', input.source, '--model', input.model, '--variant', input.variant, '--max-calls', String(expectedCalls), '--run-id', id];
   if (base) args.push('--base-url', base);
   if (input.source === 'openrouter') args.push('--cap-usd', String(input.capUsd));
   const child = spawn(join(root, '.venv', 'bin', 'python'), args, {

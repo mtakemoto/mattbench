@@ -12,7 +12,7 @@ export async function POST({ request, url }: { request: Request; url: URL }) {
     const available = await models(input.source as Source, input.baseUrl || '', input.model);
     if (!available.some((option) => option.id === input.model)) throw new Error('The selected model is no longer in this source catalog. Refresh the list.');
     const job = startJob({
-      source: input.source as Source, model: input.model, variant: input.variant,
+      source: input.source as Source, model: input.model, variant: input.variant, caseId: input.caseId,
       baseUrl: input.baseUrl, maxCalls: input.maxCalls, capUsd: input.capUsd, capConfirmed: input.capConfirmed
     });
     return json({ job }, { status: 202 });

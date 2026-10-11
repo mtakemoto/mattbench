@@ -4,7 +4,7 @@
 
 **Reported — owner direction, 2026-10-10:** Chained Home Assistant operations are the main use case. Use real ha-mcp in Docker for write tests, connected to a disposable synthetic Home Assistant instance. Apply the same path to substantive read-only HA cases so tool behavior is comparable.
 
-**Observed — upstream and local review, 2026-10-10:** [ha-mcp's end-to-end tests](https://github.com/homeassistant-ai/ha-mcp/blob/master/tests/README.md) start a real Home Assistant container and exercise the actual MCP server. Its [Docker Compose example](https://github.com/homeassistant-ai/ha-mcp/blob/master/docker-compose.yml) points ha-mcp at Home Assistant by service name. [Synthetic Home](https://github.com/allenporter/home-assistant-synthetic-home) loads a YAML inventory into real HA entities. Docker Engine 29.8.1 and Compose 5.5.1 are available on this workstation, though the sandboxed process needed elevated Docker socket access. No benchmark containers have been started here.
+**Observed — upstream and local review, 2026-10-10:** [ha-mcp's end-to-end tests](https://github.com/homeassistant-ai/ha-mcp/blob/master/tests/README.md) start a real Home Assistant container and exercise the actual MCP server. Its [Docker Compose example](https://github.com/homeassistant-ai/ha-mcp/blob/master/docker-compose.yml) points ha-mcp at Home Assistant by service name. [Synthetic Home](https://github.com/allenporter/home-assistant-synthetic-home) loads a YAML inventory into real HA entities. Docker Engine 29.8.1 and Compose 5.5.1 are available on this workstation. The Inspect pilot subsequently ran real ha-mcp through Docker stdio against disposable Synthetic Home and changed only a fictional coordinator.
 
 ## Target execution path
 
@@ -18,14 +18,20 @@ Destroying the per-run state is the reset. Undoing only visible entity changes c
 
 ## First case and boundaries
 
-**Planned:** A small climate sequence: discover the coordinator, read its target, set a new target through real ha-mcp, read it back, and verify the expected target in Home Assistant while the raw indoor head remains unchanged. Pin the exact initial and final values and allowed tool calls before any model run. Add an automation or dashboard task only after the service path and reset are working.
+**Implemented — 2026-10-11:** `tasks/inspect-ha-cases.json` pins two fictional cases: turn off a Study Reading Lamp while its Desk Lamp remains on, and set a North Room MXZ-style Coordinator target to 68 °F while its raw Indoor Head remains at 74 °F. The shared runner starts a fresh internal Docker network, Synthetic Home, and ha-mcp for each case, validates initial state, runs Inspect with a ten-turn limit and three MCP tools, then removes both containers and the network. The grader checks pinned final states and the Inspect message trace: every service call must match the allowed action and target, required search and initial reads must precede the write, and both entities must be read back afterward. This catches an unintended service call even if its state change is later undone. It does not prove physical device safety or cover writes outside the exposed tool subset.
 
 The integration simulates supported entity state and service methods. It does not simulate a Mitsubishi controller, physical heating dynamics, sensor freshness from real hardware, or all integration-specific automations. Those limitations belong in case descriptions and scoring.
 
-## Implementation checks still open
+## Measured reset overhead
 
-- **Unknown:** A reproducible test-only onboarding/token bootstrap and Synthetic Home config-entry creation for a fresh HA container. Verify this with the pinned HA version before committing a Compose workflow. Avoid editing `.storage` directly as an ad hoc setup step.
-- **Unknown:** Exact image digests, startup time, and whether Synthetic Home dependencies can be baked into the HA image so the runtime network stays isolated.
-- **Unknown:** The best host-to-MCP transport for this workstation. A `docker exec` stdio path could avoid publishing a port; verify that it supports the complete agent loop.
+**Observed — 2026-10-11:** Each deterministic preflight began from a fresh configuration, checked pinned initial states, connected through the pinned ha-mcp container's stdio transport, called `ha_call_service`, read both entities through `ha_get_state`, checked pinned final states, then removed the containers and network. On warm images with cached Synthetic Home source, lamp setup took 4.357 s, MCP interaction 1.592 s, and cleanup 0.281 s. The MXZ-style coordinator setup took 4.392 s, MCP interaction 11.358 s, and cleanup 0.425 s. The earlier direct-HA fixture preflight measured setup at 5.557 s and 5.202 s. These are individual observations on this workstation, not a stable benchmark distribution, and exclude model generation. The ignored `artifacts/inspect/ha-timing/*.json` records setup, evaluation, cleanup, and total wall time for future agent runs; the summary exporter joins those metrics to Inspect results by eval ID. No model-scored run of these new case definitions occurred because the configured FreeToken endpoint refused connections during verification.
+
+**Observed — 2026-10-11:** The pinned Synthetic Home integration source is cached under ignored artifacts after the first download. The HA and ha-mcp images are local; the benchmark network is internal. The prior climate pilot proved `docker exec` stdio with the complete Inspect agent loop. The new lamp and manifest-driven climate cases still need model-scored end-to-end runs when FreeToken is available.
+
+## Remaining limits
+
+- The deterministic preflight proves real ha-mcp service and state tools, fixture loading, and final-state assertions. It does not score the new cases with model-generated tool choices; that remains to run when FreeToken is available.
+- Synthetic Home does not model Mitsubishi physical dynamics or integration-specific behavior. The MXZ-style case measures entity choice, service use, and readback.
+- Run timing is machine and cache dependent. Compare setup and cleanup distributions over repeated runs before deciding that per-case isolation is too expensive.
 
 The existing handwritten MCP fixture remains a low-cost harness test. It is not the scoring path for chained or write capability comparisons.
