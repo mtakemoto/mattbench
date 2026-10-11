@@ -29,3 +29,5 @@ Open `http://127.0.0.1:5173`. For a standalone server, run `npm run build`, then
 The run button currently launches only the two pinned no-tool smoke tasks. The report also displays previous HA, coding, and Pi pilot activity when those logs are present. A two-question score is a workflow screen, not a model ranking. Costs appear only when Inspect reports them; local compute cost is not measured.
 
 The app is for one owner on loopback. Do not expose it to a public network without adding authentication and a stronger endpoint access policy.
+
+The app's `DESIGN.md` and `.impeccable/design.json` are relative symlinks to the repository's design system. This keeps one source of truth while allowing the design checker to discover it inside the Svelte package boundary.

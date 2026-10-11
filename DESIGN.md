@@ -23,6 +23,22 @@ colors:
   pass-text: "#366e37"
   miss-text: "#b64430"
   paid-guard: "#362f26"
+  dial-ring: "#81945d"
+  dial-segment: "#698749"
+  control-muted: "#70866d"
+  pass-signal: "#70a344"
+  score-fill: "#8fad38"
+  paid-border: "#896c48"
+  paid-input-border: "#a88b61"
+  paid-accent: "#ddb871"
+  paid-title: "#ffe4ac"
+  paid-copy: "#eed5ad"
+  paid-warning: "#ffc1ad"
+  paid-input: "#211f1a"
+  error-background: "#51312d"
+  detail-background: "#e5ead9"
+  badge-background: "#dce6c5"
+  link-hover: "#25481d"
 typography:
   display:
     fontFamily: "Bricolage Grotesque Variable, sans-serif"
@@ -49,8 +65,39 @@ typography:
     fontFamily: "JetBrains Mono Variable, monospace"
     fontSize: "10px"
     fontWeight: 700
+  nano:
+    fontFamily: "JetBrains Mono Variable, monospace"
+    fontSize: "8px"
+  micro:
+    fontFamily: "JetBrains Mono Variable, monospace"
+    fontSize: "9px"
+  compact-body:
+    fontFamily: "DM Sans Variable, sans-serif"
+    fontSize: "11px"
+  control:
+    fontFamily: "DM Sans Variable, sans-serif"
+    fontSize: "13px"
+  intro:
+    fontFamily: "DM Sans Variable, sans-serif"
+    fontSize: "14px"
+  mobile-brand:
+    fontFamily: "Bricolage Grotesque Variable, sans-serif"
+    fontSize: "21px"
+  mobile-headline:
+    fontFamily: "Bricolage Grotesque Variable, sans-serif"
+    fontSize: "26px"
+  mobile-display:
+    fontFamily: "Bricolage Grotesque Variable, sans-serif"
+    fontSize: "2.65rem"
+  empty-symbol:
+    fontFamily: "Bricolage Grotesque Variable, sans-serif"
+    fontSize: "42px"
 rounded:
+  mark-cut: "1px"
   badge: "4px"
+  tiny-control: "5px"
+  input: "6px"
+  small-container: "7px"
   field: "8px"
   control: "9px"
   guard: "10px"
@@ -115,10 +162,13 @@ The palette is warm black and cream with a sharp lime signal.
 ### Primary
 
 - **Signal Lime** (`{colors.signal-lime}`) marks the active source, selected controls, run action, small status lights, and masthead emphasis. **Signal Lime Hover** (`{colors.signal-lime-hover}`) is the brighter interactive state.
+- **Dial Ring and Segment** (`{colors.dial-ring}`, `{colors.dial-segment}`) give the ornamental dial two quieter green marks. **Control Muted** (`{colors.control-muted}`) serves quiet control edges and icons.
 
 ### Secondary
 
 - **Coral Miss** (`{colors.coral-miss}`) marks the report heading accent; the related **Miss Text** (`{colors.miss-text}`) marks failed task results. Their uses are distinct from the green pass text (`{colors.pass-text}`).
+- **Pass Signal and Score Fill** (`{colors.pass-signal}`, `{colors.score-fill}`) distinguish activity dots and compact score bars from result text.
+- **Paid Guard Accents** (`{colors.paid-border}`, `{colors.paid-input-border}`, `{colors.paid-accent}`, `{colors.paid-title}`, `{colors.paid-copy}`, `{colors.paid-warning}`) keep spending controls and warnings legible on their warm inset.
 
 ### Neutral
 
@@ -127,6 +177,8 @@ The palette is warm black and cream with a sharp lime signal.
 - **Light Panel and Sheet** (`{colors.light-panel}`, `{colors.light-sheet}`) make the report feel like an inserted paper record.
 - **Light and Dark Text** (`{colors.light-text}`, `{colors.dark-text}`), their muted counterparts, and the two border colors support readable hierarchy on each surface.
 - **Paid Guard** (`{colors.paid-guard}`) gives hosted-run spending controls a separate warm brown zone.
+- **Paid Input, Error Background, Detail Background, and Badge Background** (`{colors.paid-input}`, `{colors.error-background}`, `{colors.detail-background}`, `{colors.badge-background}`) preserve the distinct nested surfaces used by forms, feedback, run metadata, and compact labels.
+- **Link Hover** (`{colors.link-hover}`) deepens the interactive run-detail link without changing its underline cue.
 
 **The Signal Rule.** Reserve lime for active work, selection, and the main action; keep outcome words explicit so color never carries the result alone.
 
@@ -143,6 +195,7 @@ The broad, tightly spaced display face gives the board its voice. The simpler bo
 - **Body** (`{typography.body}`): compact explanations around controls and the scorecard. The masthead paragraph is larger (14px, line-height 1.55).
 - **Label** (`{typography.label}`): uppercase system labels and status tags.
 - **Measure** (`{typography.measure}`): tabular scores, times, tokens, and cost. Numeric cells use tabular figures.
+- **Small control and mobile steps** (`{typography.nano}`, `{typography.micro}`, `{typography.compact-body}`, `{typography.control}`, `{typography.intro}`, `{typography.mobile-brand}`, `{typography.mobile-headline}`, `{typography.mobile-display}`, `{typography.empty-symbol}`): the actual compact labels, introductory copy, phone headings, and empty-state mark. These are component-specific steps, not interchangeable body sizes.
 
 **The Measurement Rule.** Put exact values in a mono treatment near the task or run they describe; keep explanatory prose in DM Sans.
 
@@ -160,7 +213,7 @@ The board is mostly flat. Tonal surfaces and 1px borders separate major areas an
 
 ## Shapes
 
-Controls use compact rounded rectangles: 8px fields and report containers, 9px navigation and choice controls, and a 10px paid guard. Badges have 4px corners. Model selection dots, status lights, and the masthead dial are circular. The brand mark is three tilted lime bars with uneven heights and partially rounded tops. Report rows stay rectangular and rule-separated.
+Controls use compact rounded rectangles: 8px fields and report containers, 9px navigation and choice controls, and a 10px paid guard. Badges have 4px corners; small filter buttons, nested inputs, and message trays use the documented 5px, 6px, and 7px steps. Model selection dots, status lights, and the masthead dial are circular. The brand mark is three tilted lime bars with uneven heights and a 1px lower cut. Report rows stay rectangular and rule-separated.
 
 ## Components
 
