@@ -32,6 +32,8 @@
   let runError = $state('');
   let filter = $state<'all' | 'local' | 'hosted'>('all');
   let selectedKey = $state('');
+  let selectedReportRunKey = $state('');
+  let selectedActivityRunKey = $state('');
   let searchTimer: ReturnType<typeof setTimeout>;
   let catalogRequest = 0;
   const sourceNames: Record<Source, string> = { freetoken: 'FreeToken', openrouter: 'OpenRouter', compatible: 'Other endpoint' };
@@ -49,10 +51,40 @@
   function fmt(value: number) { return new Intl.NumberFormat('en-US').format(value); }
   function secs(value?: number) { return value == null ? '—' : `${value.toFixed(value < 10 ? 1 : 0)}s`; }
   function taskName(id: string) { return availableCases.find((entry) => entry.id === id)?.name || id.replaceAll('_', ' '); }
+  function runKey(row: Row) { return JSON.stringify([row.launcher_run_id || row.run_id, row.model]); }
+  function runTime(value: string) {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? 'Time not reported' : new Intl.DateTimeFormat('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'UTC', timeZoneName: 'short'
+    }).format(date);
+  }
+  let runs = $derived.by(() => {
+    const groups: Record<string, Row[]> = Object.create(null) as Record<string, Row[]>;
+    for (const row of rows.filter((entry) => !entry.model.startsWith('mockllm/'))) {
+      const key = runKey(row);
+      groups[key] = [...(groups[key] || []), row];
+    }
+    return Object.entries(groups).map(([key, group]) => {
+      const ordered = [...group].sort((a, b) => (a.started_at || '').localeCompare(b.started_at || ''));
+      return {
+        key, rows: ordered, model: ordered[0].model, runId: ordered[0].launcher_run_id || ordered[0].run_id,
+        startedAt: ordered[0].started_at || '', pass: ordered.filter((row) => row.passed === true).length,
+        scored: ordered.filter((row) => row.passed !== null).length,
+        unscored: ordered.filter((row) => row.passed === null).length,
+        prompts: [...new Set(ordered.map((row) => row.prompt_variant))].join(' + ')
+      };
+    }).sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+  });
+  function runScore(run: (typeof runs)[number]) { return run.scored ? `${run.pass} of ${run.scored} passed` : 'No scored tasks'; }
+  function runLabel(run: (typeof runs)[number]) { return `${runTime(run.startedAt)} · ${name(run.model)} · ${runScore(run)}`; }
+  let reportRuns = $derived(runs.filter((run) => run.rows.some((row) => availableCases.some((entry) => entry.id === row.sample_id)) && (filter === 'all' || (filter === 'hosted' ? route(run.model) === 'OpenRouter' : route(run.model) !== 'OpenRouter'))));
+  let activityRuns = $derived(runs);
+  let selectedReportRun = $derived(reportRuns.find((run) => run.key === selectedReportRunKey) || reportRuns[0]);
+  let selectedActivityRun = $derived(activityRuns.find((run) => run.key === selectedActivityRunKey) || activityRuns[0]);
   let matrix = $derived.by(() => {
     const groups: Record<string, Row[]> = Object.create(null) as Record<string, Row[]>;
-    for (const row of rows.filter((r) => availableCases.some((entry) => entry.id === r.sample_id) && !r.model.startsWith('mockllm/'))) {
-      const key = `${row.model}|${row.prompt_variant}|${row.launcher_run_id || row.run_id}`;
+    for (const row of (selectedReportRun?.rows || []).filter((entry) => availableCases.some((benchmark) => benchmark.id === entry.sample_id))) {
+      const key = row.prompt_variant;
       groups[key] = [...(groups[key] || []), row];
     }
     return Object.values(groups).map((group) => {
@@ -64,10 +96,9 @@
       time: group.reduce((sum, r) => sum + (r.latency_seconds || 0), 0), setup: group.reduce((sum, r) => sum + (r.run_timing?.setup_seconds || 0), 0), cleanup: group.reduce((sum, r) => sum + (r.run_timing?.teardown_seconds || 0), 0), tokens: group.reduce((sum, r) => sum + tokens(r), 0), cost: group.some((r) => cost(r) !== null) ? group.reduce((sum, r) => sum + (cost(r) || 0), 0) : null,
       sample: group[0]
       };
-    }).sort((a, b) => (b.sample.started_at || '').localeCompare(a.sample.started_at || '')).filter((g) => filter === 'all' || (filter === 'hosted' ? route(g.model) === 'OpenRouter' : route(g.model) !== 'OpenRouter'));
+    }).sort((a, b) => a.prompt.localeCompare(b.prompt));
   });
   let selectedRun = $derived(matrix.find((entry) => entry.key === selectedKey));
-  let recent = $derived([...rows].filter((r) => !r.model.startsWith('mockllm/')).sort((a, b) => (b.started_at || '').localeCompare(a.started_at || '')));
   let activeView = $state<'run' | 'results' | 'activity'>('run');
   let jobProgress = $derived(job?.totalCases ? Math.round(((job.completedCount || 0) / job.totalCases) * 100) : 0);
   let jobPhase = $derived(job?.phase?.replaceAll('_', ' ') || (job?.status === 'running' ? 'running' : job?.status || ''));
@@ -135,17 +166,18 @@
         <div class:hidden-view={activeView === 'activity'}>
         <div class="section-head"><div><h2 id="report-title">The scorecard<span>.</span></h2><p>All pinned fixture cases. Missing outcomes stay marked NOT RUN.</p></div><b>LIVE DATA</b></div>
         <div class="note"><Info size={17} aria-hidden="true"/> These pilot cases screen the workflow. A few tasks cannot establish broad model superiority.</div>
-        <div class="report-toolbar"><strong>MODEL × PROMPT</strong><div role="group" aria-label="Filter results"><button class:selected={filter === 'all'} onclick={() => filter = 'all'}>All</button><button class:selected={filter === 'local'} onclick={() => filter = 'local'}>Local</button><button class:selected={filter === 'hosted'} onclick={() => filter = 'hosted'}>Hosted</button></div></div>
+        <div class="report-toolbar"><strong>RUN RESULTS</strong><div role="group" aria-label="Filter results"><button class:selected={filter === 'all'} onclick={() => filter = 'all'}>All</button><button class:selected={filter === 'local'} onclick={() => filter = 'local'}>Local</button><button class:selected={filter === 'hosted'} onclick={() => filter = 'hosted'}>Hosted</button></div></div>
+        {#if selectedReportRun}<div class="run-picker"><label for="report-run">Choose a run</label><select id="report-run" value={selectedReportRun.key} onchange={(event) => { selectedReportRunKey = event.currentTarget.value; selectedKey = ''; }}>{#each reportRuns as run (run.key)}<option value={run.key}>{runLabel(run)}</option>{/each}</select><div class="run-picker-summary"><strong>{name(selectedReportRun.model)}</strong><span>{runTime(selectedReportRun.startedAt)} · {selectedReportRun.prompts} prompt · {runScore(selectedReportRun)}{selectedReportRun.unscored ? ` · ${selectedReportRun.unscored} unscored` : ''}</span></div></div>{/if}
         {#if matrix.length}
           <div class="matrix-wrap"><table><thead><tr><th scope="col">Model / prompt</th>{#each availableCases as entry (entry.id)}<th scope="col">{entry.name}</th>{/each}<th scope="col">Score</th><th scope="col">Model time</th><th scope="col">Setup</th><th scope="col">Cleanup</th><th scope="col">Tokens</th><th scope="col">Cost</th></tr></thead><tbody>
             {#each matrix as entry (entry.key)}
               <tr><th scope="row"><strong>{short(entry.model)}</strong><small>{route(entry.model)} · {entry.prompt} prompt · {entry.runId}</small><button class="detail-link" type="button" aria-expanded={selectedKey === entry.key} onclick={() => selectedKey = selectedKey === entry.key ? '' : entry.key}>Run details</button></th>
                 {#each availableCases as benchmark (benchmark.id)}{@const result = entry.cases[benchmark.id]}<td><span class:pass={result?.passed === true} class:miss={result?.passed === false} class="result">{result ? result.passed === true ? 'PASS' : result.passed === false ? 'MISS' : 'UNSCORED' : 'NOT RUN'}</span></td>{/each}
-                <td><div class="score"><strong>{entry.scored ? `${entry.pass}/${availableCases.length}` : '—'}</strong><span><i style:width={`${entry.pass / availableCases.length * 100}%`}></i></span></div></td><td class="numeric">{secs(entry.time)}</td><td class="numeric">{entry.setup ? secs(entry.setup) : '—'}</td><td class="numeric">{entry.cleanup ? secs(entry.cleanup) : '—'}</td><td class="numeric">{fmt(entry.tokens)}</td><td class="numeric">{entry.cost === null ? '—' : `$${entry.cost.toFixed(6)}`}</td>
+                <td><div class="score"><strong>{entry.scored ? `${entry.pass}/${entry.scored}` : '—'}</strong><span><i style:width={`${entry.scored ? entry.pass / entry.scored * 100 : 0}%`}></i></span></div></td><td class="numeric">{secs(entry.time)}</td><td class="numeric">{entry.setup ? secs(entry.setup) : '—'}</td><td class="numeric">{entry.cleanup ? secs(entry.cleanup) : '—'}</td><td class="numeric">{fmt(entry.tokens)}</td><td class="numeric">{entry.cost === null ? '—' : `$${entry.cost.toFixed(6)}`}</td>
               </tr>
             {/each}
           </tbody></table></div>
-        {:else}<div class="empty"><div aria-hidden="true">×</div><strong>No scored runs in this view yet.</strong><p>Pick a model and run this pinned case. Its task result will land here.</p></div>{/if}
+        {:else}<div class="empty"><div aria-hidden="true">×</div><strong>No runs in this view yet.</strong><p>Choose another source filter, or run a pinned benchmark to see its task results here.</p></div>{/if}
         {#if selectedRun}
           <div class="run-detail" aria-label="Selected run details"><div class="detail-head"><h3>Run details</h3><button type="button" onclick={() => selectedKey = ''}>Close</button></div><dl>
             <div><dt>Exact model ID</dt><dd>{name(selectedRun.model)}</dd></div><div><dt>Source</dt><dd>{route(selectedRun.model)}</dd></div>
@@ -157,7 +189,7 @@
             {#if selectedRun.sample.run_timing}<div><dt>Container setup / cleanup</dt><dd>{secs(selectedRun.sample.run_timing.setup_seconds)} / {secs(selectedRun.sample.run_timing.teardown_seconds)}</dd></div><div><dt>Evaluation / wall time</dt><dd>{secs(selectedRun.sample.run_timing.evaluation_seconds)} / {secs(selectedRun.sample.run_timing.total_wall_seconds)}</dd></div>{/if}
           </dl></div>
         {/if}
-        </div><div class="activity" class:hidden-view={activeView !== 'activity'} id="activity"><div class="activity-head"><h3>Activity</h3><span>{recent.length} TASK RECORDS</span></div>{#if recent.length}{#each recent as row (`${row.run_id}-${row.sample_id}-${row.prompt_variant}`)}<div class="activity-row"><i class:good={row.passed === true} class:bad={row.passed === false}></i><div><strong>{taskName(row.sample_id)}</strong><small>{short(row.model)} · {row.prompt_variant} prompt · {row.started_at || 'Time not reported'} · run {row.launcher_run_id || row.run_id}</small></div><aside><strong>{row.passed === true ? 'PASS' : row.passed === false ? 'MISS' : 'UNSCORED'}</strong><small>{secs(row.latency_seconds)} · {fmt(tokens(row))} tok</small></aside></div>{/each}{:else}<p class="activity-empty">Run a benchmark to build an activity trail.</p>{/if}</div>
+        </div><div class="activity" class:hidden-view={activeView !== 'activity'} id="activity"><div class="activity-head"><h3>Activity</h3><span>{activityRuns.length} {activityRuns.length === 1 ? 'RUN' : 'RUNS'}</span></div>{#if selectedActivityRun}<div class="run-picker"><label for="activity-run">Choose a run</label><select id="activity-run" value={selectedActivityRun.key} onchange={(event) => selectedActivityRunKey = event.currentTarget.value}>{#each activityRuns as run (run.key)}<option value={run.key}>{runLabel(run)}</option>{/each}</select><div class="run-picker-summary"><strong>{name(selectedActivityRun.model)}</strong><span>{runTime(selectedActivityRun.startedAt)} · {selectedActivityRun.prompts} prompt · {runScore(selectedActivityRun)}{selectedActivityRun.unscored ? ` · ${selectedActivityRun.unscored} unscored` : ''}</span><small>Run {selectedActivityRun.runId} · {selectedActivityRun.rows.length} task {selectedActivityRun.rows.length === 1 ? 'record' : 'records'}</small></div></div>{#each selectedActivityRun.rows as row (`${row.run_id}-${row.sample_id}-${row.prompt_variant}`)}<div class="activity-row"><i class:good={row.passed === true} class:bad={row.passed === false}></i><div><strong>{taskName(row.sample_id)}</strong><small>{row.prompt_variant} prompt · {runTime(row.started_at || '')}</small></div><aside><strong>{row.passed === true ? 'PASS' : row.passed === false ? 'MISS' : 'UNSCORED'}</strong><small>{secs(row.latency_seconds)} · {fmt(tokens(row))} tok</small></aside></div>{/each}{:else}<p class="activity-empty">Run a benchmark to build an activity trail.</p>{/if}</div>
       </section>
     </div>
     <footer><span>mattbench / personal evaluation lab</span><span>Fixtures and scores stay pinned. Raw traces stay local.</span></footer>
