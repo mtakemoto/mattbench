@@ -1,0 +1,166 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-11T08:48:25Z",
+  "title": "Design System: mattbench",
+  "extensions": {
+    "shadows": [
+      {
+        "name": "dial-inset-rings",
+        "value": "inset 0 0 0 12px #1b231e, inset 0 0 0 13px #53644c",
+        "purpose": "Concentric detail inside the decorative masthead dial."
+      },
+      {
+        "name": "run-button-hover",
+        "value": "0 8px 18px #101b104d",
+        "purpose": "Lift the primary action on hover."
+      },
+      {
+        "name": "field-focus",
+        "value": "0 0 0 2px #d8ee6b30",
+        "purpose": "Show focus within a dark search or endpoint field."
+      },
+      {
+        "name": "status-glow",
+        "value": "0 0 9px #d8ee6b65",
+        "purpose": "Light the small rail and engine status dots."
+      }
+    ],
+    "motion": [
+      {
+        "name": "control-state",
+        "value": "background .18s, transform .18s, border-color .18s",
+        "purpose": "Source and prompt choice hover changes."
+      },
+      {
+        "name": "run-action",
+        "value": "background .18s, transform .18s, box-shadow .18s",
+        "purpose": "Primary action hover changes."
+      },
+      {
+        "name": "working-pulse",
+        "value": "pulse 1.6s ease-in-out infinite",
+        "purpose": "Status dot while a benchmark job is running."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "animation-duration: .01ms; transition-duration: .01ms",
+        "purpose": "Motion reduction under prefers-reduced-motion: reduce."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "compact-rail",
+        "value": "1350px"
+      },
+      {
+        "name": "stacked-workspace",
+        "value": "900px"
+      },
+      {
+        "name": "top-strip-navigation",
+        "value": "620px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Run action",
+      "kind": "button",
+      "refersTo": "run-button",
+      "description": "The single bright action at the end of run setup.",
+      "html": "<button class=\"ds-run-button\" type=\"button\"><span>RUN BENCHMARK</span><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M5 12h14m-6-6 6 6-6 6\"/></svg></button>",
+      "css": ".ds-run-button{min-height:54px;min-width:210px;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:0 16px;border:0;border-radius:9px;background:#d8ee6b;color:#1a291d;font:900 12px 'DM Sans Variable',sans-serif;letter-spacing:.02em;cursor:pointer;transition:background .18s,transform .18s,box-shadow .18s}.ds-run-button svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:2}.ds-run-button:hover:not(:disabled){background:#edfa9b;transform:translateY(-2px);box-shadow:0 8px 18px #101b104d}.ds-run-button:focus-visible{outline:3px solid #d6f167;outline-offset:3px}.ds-run-button:disabled{opacity:.44;cursor:not-allowed}"
+    },
+    {
+      "name": "Selected source choice",
+      "kind": "button",
+      "refersTo": "source-choice-selected",
+      "description": "A selected source tile within the three-column choice grid.",
+      "html": "<button class=\"ds-source-choice\" type=\"button\" aria-pressed=\"true\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"2\"/><path d=\"M7.8 7.8a6 6 0 0 0 0 8.4m8.4-8.4a6 6 0 0 1 0 8.4M4.5 4.5a11 11 0 0 0 0 15m15-15a11 11 0 0 1 0 15\"/></svg><strong>FreeToken</strong><small>This machine</small></button>",
+      "css": ".ds-source-choice{min-width:115px;text-align:left;padding:12px 9px;border:1px solid #d8ee6b;border-radius:9px;background:#40543d;color:#e9efe5;cursor:pointer;transition:background .18s,transform .18s,border-color .18s}.ds-source-choice svg{display:block;width:22px;height:26px;fill:none;stroke:#d8ee6b;stroke-width:1.8}.ds-source-choice strong,.ds-source-choice small{display:block;white-space:nowrap;font-family:'DM Sans Variable',sans-serif}.ds-source-choice strong{font-size:11px}.ds-source-choice small{font-size:10px;color:#c1ceb9;margin-top:5px}.ds-source-choice:hover{transform:translateY(-1px)}.ds-source-choice:focus-visible{outline:3px solid #d6f167;outline-offset:3px}"
+    },
+    {
+      "name": "Model search",
+      "kind": "input",
+      "refersTo": "model-search",
+      "description": "Searches served or hosted models inside the dark setup panel.",
+      "html": "<label class=\"ds-search\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><circle cx=\"10.8\" cy=\"10.8\" r=\"6.8\"/><path d=\"m16 16 5 5\"/></svg><input aria-label=\"Filter models\" placeholder=\"Filter served models\" /></label>",
+      "css": ".ds-search{height:43px;min-width:260px;display:flex;align-items:center;gap:9px;padding:0 12px;background:#121b15;border:1px solid #5a705a;border-radius:8px}.ds-search svg{width:17px;height:17px;fill:none;stroke:#c1cebb;stroke-width:1.8;flex:none}.ds-search input{background:transparent;border:0;outline:0;color:#f4f2e8;min-width:0;width:100%;font:12px 'DM Sans Variable',sans-serif;caret-color:#bf4d37}.ds-search input::placeholder{color:#adbbaa}.ds-search:focus-within{border-color:#d8ee6b;box-shadow:0 0 0 2px #d8ee6b30}"
+    },
+    {
+      "name": "Model selection row",
+      "kind": "custom",
+      "description": "A model row with the selected radio treatment and a compact context label.",
+      "html": "<label class=\"ds-model-row\"><input type=\"radio\" name=\"ds-model\" checked /><i aria-hidden=\"true\"></i><span><strong>Example model</strong><small>provider/model-id</small></span><em>CTX</em></label>",
+      "css": ".ds-model-row{min-height:54px;display:flex;align-items:center;gap:10px;padding:8px 10px;background:#3b503b;color:#f4f0e6;border:1px solid #4f6251;border-radius:8px;cursor:pointer;font-family:'DM Sans Variable',sans-serif}.ds-model-row:hover{background:#3b503b}.ds-model-row:focus-within{outline:3px solid #d6f167;outline-offset:3px}.ds-model-row input{position:absolute;opacity:0;width:1px;height:1px}.ds-model-row i{width:14px;height:14px;border:4px solid #d8ee6b;border-radius:50%;flex:none}.ds-model-row span{min-width:0;flex:1}.ds-model-row strong,.ds-model-row small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ds-model-row strong{font-size:12px}.ds-model-row small{font:10px 'JetBrains Mono Variable',monospace;color:#b5c4b0;margin-top:4px}.ds-model-row em{font:9px 'JetBrains Mono Variable',monospace;color:#c8d8bb;font-style:normal;white-space:nowrap}"
+    },
+    {
+      "name": "Scorecard",
+      "kind": "card",
+      "refersTo": "scorecard",
+      "description": "A paper-like task matrix with explicit outcome words and measured columns.",
+      "html": "<div class=\"ds-scorecard\"><table><thead><tr><th>MODEL / PROMPT</th><th>STRAWBERRY</th><th>TIME</th></tr></thead><tbody><tr><th><strong>Example model</strong><small>Local · base prompt</small></th><td class=\"ds-pass\">PASS</td><td>8.3s</td></tr></tbody></table></div>",
+      "css": ".ds-scorecard{max-width:100%;overflow-x:auto;border:1px solid #d0d5c4;border-radius:8px;background:#fbfaf2;color:#18231a}.ds-scorecard table{border-collapse:collapse;min-width:680px;width:100%}.ds-scorecard th,.ds-scorecard td{text-align:left;padding:14px 10px;border-bottom:1px solid #e2e5d8}.ds-scorecard thead th{font:700 9px 'JetBrains Mono Variable',monospace;color:#596e59;background:#f3f4e9}.ds-scorecard tbody th{padding-left:14px}.ds-scorecard tbody th strong{display:block;font:700 11px 'DM Sans Variable',sans-serif}.ds-scorecard tbody th small{display:block;font:10px 'DM Sans Variable',sans-serif;color:#5b705c;margin-top:4px}.ds-scorecard tbody td{font:700 10px 'JetBrains Mono Variable',monospace;font-variant-numeric:tabular-nums}.ds-scorecard .ds-pass{color:#366e37;font-weight:800}"
+    },
+    {
+      "name": "Paid run guard",
+      "kind": "card",
+      "refersTo": "paid-guard",
+      "description": "A separate warm zone around hosted-run spending confirmation.",
+      "html": "<div class=\"ds-paid\"><h3><span>$</span> Paid run guard</h3><p>Confirm the active workspace cap before this hosted run.</p><label>Active workspace cap (USD)<input type=\"number\" value=\"20\" /></label></div>",
+      "css": ".ds-paid{max-width:320px;background:#362f26;border:1px solid #896c48;border-radius:10px;padding:16px;color:#f1dfbc;font-family:'DM Sans Variable',sans-serif}.ds-paid h3{display:flex;align-items:center;gap:9px;margin:0;color:#ffe4ac;font-size:13px}.ds-paid h3 span{width:23px;height:23px;border:1px solid #ddb871;border-radius:50%;display:grid;place-items:center}.ds-paid p{font-size:11px;line-height:1.5;color:#eed5ad}.ds-paid label{display:block;font-size:11px;font-weight:700;margin-top:12px}.ds-paid input{display:block;width:100%;margin-top:6px;border:1px solid #a88b61;background:#211f1a;color:#fff4dc;padding:9px;border-radius:6px;font:inherit;box-sizing:border-box}.ds-paid input:focus-visible{outline:3px solid #d6f167;outline-offset:3px}"
+    },
+    {
+      "name": "Active rail link",
+      "kind": "nav",
+      "description": "Compact dark navigation with a green active state.",
+      "html": "<nav class=\"ds-rail\" aria-label=\"Primary navigation\"><a href=\"#run\" aria-current=\"page\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M7 17 17 7M8 7h9v9\"/></svg><span>Run a benchmark</span></a></nav>",
+      "css": ".ds-rail{display:inline-block;padding:8px;background:#111614}.ds-rail a{min-height:44px;display:flex;align-items:center;gap:13px;padding:0 13px;border-radius:9px;background:#27362b;color:#edfa9b;text-decoration:none;font:700 13px 'DM Sans Variable',sans-serif}.ds-rail svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8}.ds-rail a:hover{background:#27362b;color:#edfa9b}.ds-rail a:focus-visible{outline:3px solid #d6f167;outline-offset:3px}"
+    },
+    {
+      "name": "Run detail panel",
+      "kind": "card",
+      "description": "A pale inset record of the exact run identity and settings.",
+      "html": "<section class=\"ds-run-detail\"><h3>Run details</h3><dl><div><dt>Exact model ID</dt><dd>provider/model-id</dd></div><div><dt>Prompt</dt><dd>base</dd></div></dl></section>",
+      "css": ".ds-run-detail{max-width:420px;background:#e5ead9;border:1px solid #c0d0b6;border-radius:9px;padding:17px 18px;color:#203624}.ds-run-detail h3{font:800 18px 'Bricolage Grotesque Variable',sans-serif;margin:0 0 14px}.ds-run-detail dl{display:grid;grid-template-columns:1fr 1fr;gap:13px 20px;margin:0}.ds-run-detail dt{font:700 9px 'JetBrains Mono Variable',monospace;color:#526b52;text-transform:uppercase;letter-spacing:.05em}.ds-run-detail dd{font:11px/1.4 'DM Sans Variable',sans-serif;margin:4px 0 0;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}@media(max-width:620px){.ds-run-detail dl{grid-template-columns:1fr}}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Operator Board",
+    "overview": "The current console pairs a dark control surface with a warm paper report surface. Lime marks the active path through a run, while the paper area keeps task outcomes and measurements easy to scan. The masthead is loud and graphic; the controls and results are dense, explicit, and restrained.\n\nThis is the first code-led visual direction, not an owner-approved brand identity. Its reusable character is a bright, instrument-like working surface with visible run identity and task-level evidence. The circular masthead dial reads as a timing mark; it does not encode benchmark progress.",
+    "keyCharacteristics": [
+      "Dark operation area beside a cream result sheet.",
+      "Strong display type for short declarations; compact monospace for measurements and system labels.",
+      "Lime for selection and action; coral and green for distinct result meanings.",
+      "Thin boundaries and surface tone carry most of the hierarchy."
+    ],
+    "rules": [
+      {
+        "name": "The Signal Rule",
+        "body": "Reserve lime for active work, selection, and the main action; keep outcome words explicit so color never carries the result alone.",
+        "section": "colors"
+      },
+      {
+        "name": "The Measurement Rule",
+        "body": "Put exact values in a mono treatment near the task or run they describe; keep explanatory prose in DM Sans.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat Record Rule",
+        "body": "Keep report data on the cream plane; use borders and spacing to separate rows before adding lift.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do give run setup and task evidence distinct dark and light surfaces.",
+      "Do show outcome words alongside pass and miss colors.",
+      "Do keep long identifiers and wide result tables contained within their component boundaries.",
+      "Do use the established 1350px, 900px, and 620px transitions when extending this console shell."
+    ],
+    "donts": [
+      "Don't turn the dial into a progress or quality score without a real data definition.",
+      "Don't imply model superiority from a tiny smoke suite.",
+      "Don't rely on shadows to structure the report surface."
+    ]
+  }
+}
