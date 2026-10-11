@@ -7,10 +7,10 @@
   type Source = 'freetoken' | 'openrouter' | 'compatible';
   type Model = { id: string; name: string; contextLength?: number };
   type RunTiming = { setup_seconds?: number; evaluation_seconds?: number; teardown_seconds?: number; total_wall_seconds?: number };
-  type Row = { task: string; run_id: string; sample_id: string; prompt_variant: string; model: string; concrete_response_model?: string; passed: boolean | null; latency_seconds?: number; usage?: Record<string, { total_tokens?: number; total_cost?: number | null }>; started_at?: string; inference?: { temperature?: number; max_tokens?: number; max_retries?: number; timeout?: number }; inspect_version?: string; task_version?: string; fixture?: string; log_file?: string; run_timing?: RunTiming };
+  type Row = { task: string; run_id: string; launcher_run_id?: string; sample_id: string; prompt_variant: string; model: string; concrete_response_model?: string; passed: boolean | null; latency_seconds?: number; usage?: Record<string, { total_tokens?: number; total_cost?: number | null }>; started_at?: string; inference?: { temperature?: number; max_tokens?: number; max_retries?: number; timeout?: number }; inspect_version?: string; task_version?: string; fixture?: string; log_file?: string; run_timing?: RunTiming };
   type BenchmarkCase = { id: string; name: string; suite: 'smoke' | 'ha'; fixture: string };
   type CaseTiming = { case_id: string; status: string; setup_seconds: number; evaluation_seconds: number; teardown_seconds: number; total_wall_seconds: number };
-  type Job = { status: 'running' | 'complete' | 'failed' | 'interrupted'; source: Source; model: string; error?: string };
+  type Job = { status: 'running' | 'complete' | 'failed' | 'interrupted'; phase?: string; source: Source; model: string; caseId?: string; currentCaseId?: string; completedCases?: { caseId: string; status: string; message?: string }[]; completedCount?: number; totalCases?: number; message?: string; error?: string };
   let { data }: PageProps = $props();
   let refreshedRows = $state.raw<Row[] | null>(null);
   let refreshedJob = $state.raw<Job | null | undefined>(undefined);
@@ -24,7 +24,7 @@
   let catalog = $state.raw<Model[]>([]);
   let selectedModel = $state('');
   let variant = $state<'base' | 'careful' | 'both'>('both');
-  let caseId = $state('smoke');
+  let caseId = $state('all');
   let capUsd = $state(20);
   let capConfirmed = $state(false);
   let loading = $state(false);
@@ -36,9 +36,10 @@
   let catalogRequest = 0;
   const sourceNames: Record<Source, string> = { freetoken: 'FreeToken', openrouter: 'OpenRouter', compatible: 'Other endpoint' };
   let availableCases = $derived(data.cases as BenchmarkCase[]);
-  let visibleCases = $derived(availableCases.filter((entry) => entry.suite === (caseId === 'smoke' ? 'smoke' : 'ha') && (caseId === 'smoke' || entry.id === caseId)));
+  let visibleCases = $derived(caseId === 'all' ? availableCases : availableCases.filter((entry) => entry.suite === (caseId === 'smoke' ? 'smoke' : 'ha') && (caseId === 'smoke' || entry.id === caseId)));
   let caseTiming = $derived(timings.find((entry) => entry.case_id === caseId));
-  let maxCalls = $derived(caseId === 'smoke' ? variant === 'both' ? 4 : 2 : 10);
+  let totalCallCap = $derived(availableCases.filter((entry) => entry.suite === 'ha').length * 10 + 2);
+  let maxCalls = $derived(caseId === 'all' ? totalCallCap : caseId === 'smoke' ? variant === 'both' ? 4 : 2 : 10);
   let canRun = $derived(Boolean(selectedModel) && !loading && job?.status !== 'running' && (caseId === 'smoke' || source !== 'openrouter') && (source !== 'openrouter' || (data.sources.openrouter.configured && capConfirmed && capUsd > 0 && capUsd <= 20)));
   function name(model: string) { return model.replace(/^openai-api\/(freetoken|openrouter|compatible)\//, ''); }
   function short(model: string) { const text = name(model); return text.length > 31 ? `${text.slice(0, 29)}…` : text; }
@@ -49,27 +50,27 @@
   function secs(value?: number) { return value == null ? '—' : `${value.toFixed(value < 10 ? 1 : 0)}s`; }
   function taskName(id: string) { return availableCases.find((entry) => entry.id === id)?.name || id.replaceAll('_', ' '); }
   let matrix = $derived.by(() => {
-    const groups = new Map<string, Row[]>();
-    for (const row of rows.filter((r) => visibleCases.some((entry) => entry.id === r.sample_id) && !r.model.startsWith('mockllm/'))) {
-      const key = `${row.model}|${row.prompt_variant}|${row.run_id}`;
-      groups.set(key, [...(groups.get(key) || []), row]);
+    const groups: Record<string, Row[]> = Object.create(null) as Record<string, Row[]>;
+    for (const row of rows.filter((r) => availableCases.some((entry) => entry.id === r.sample_id) && !r.model.startsWith('mockllm/'))) {
+      const key = `${row.model}|${row.prompt_variant}|${row.launcher_run_id || row.run_id}`;
+      groups[key] = [...(groups[key] || []), row];
     }
-    const latest = new Map<string, Row[]>();
-    for (const group of groups.values()) {
-      const key = `${group[0].model}|${group[0].prompt_variant}`;
-      const previous = latest.get(key);
-      if (!previous || (group[0].started_at || '') > (previous[0].started_at || '')) latest.set(key, group);
-    }
-    return [...latest.values()].map((group) => ({
-      key: `${group[0].model}|${group[0].prompt_variant}`, model: group[0].model, prompt: group[0].prompt_variant,
+    return Object.values(groups).map((group) => {
+      const runId = group[0].launcher_run_id || group[0].run_id;
+      return {
+      key: `${group[0].model}|${group[0].prompt_variant}|${runId}`, runId, model: group[0].model, prompt: group[0].prompt_variant,
       cases: Object.fromEntries(group.map((row) => [row.sample_id, row])) as Record<string, Row>,
       pass: group.filter((r) => r.passed === true).length, scored: group.filter((r) => r.passed !== null).length,
-      time: group.reduce((sum, r) => sum + (r.latency_seconds || 0), 0), tokens: group.reduce((sum, r) => sum + tokens(r), 0), cost: group.some((r) => cost(r) !== null) ? group.reduce((sum, r) => sum + (cost(r) || 0), 0) : null,
+      time: group.reduce((sum, r) => sum + (r.latency_seconds || 0), 0), setup: group.reduce((sum, r) => sum + (r.run_timing?.setup_seconds || 0), 0), cleanup: group.reduce((sum, r) => sum + (r.run_timing?.teardown_seconds || 0), 0), tokens: group.reduce((sum, r) => sum + tokens(r), 0), cost: group.some((r) => cost(r) !== null) ? group.reduce((sum, r) => sum + (cost(r) || 0), 0) : null,
       sample: group[0]
-    })).filter((g) => filter === 'all' || (filter === 'hosted' ? route(g.model) === 'OpenRouter' : route(g.model) !== 'OpenRouter'));
+      };
+    }).sort((a, b) => (b.sample.started_at || '').localeCompare(a.sample.started_at || '')).filter((g) => filter === 'all' || (filter === 'hosted' ? route(g.model) === 'OpenRouter' : route(g.model) !== 'OpenRouter'));
   });
   let selectedRun = $derived(matrix.find((entry) => entry.key === selectedKey));
-  let recent = $derived([...rows].filter((r) => !r.model.startsWith('mockllm/')).sort((a, b) => (b.started_at || '').localeCompare(a.started_at || '')).slice(0, 6));
+  let recent = $derived([...rows].filter((r) => !r.model.startsWith('mockllm/')).sort((a, b) => (b.started_at || '').localeCompare(a.started_at || '')));
+  let activeView = $state<'run' | 'results' | 'activity'>('run');
+  let jobProgress = $derived(job?.totalCases ? Math.round(((job.completedCount || 0) / job.totalCases) * 100) : 0);
+  let jobPhase = $derived(job?.phase?.replaceAll('_', ' ') || (job?.status === 'running' ? 'running' : job?.status || ''));
 
   async function loadModels() {
     const requestId = ++catalogRequest;
@@ -88,6 +89,7 @@
   }
   function chooseSource(next: Source) { ++catalogRequest; source = next; query = ''; selectedModel = ''; catalog = []; catalogError = ''; runError = ''; loading = false; if (next !== 'compatible') void loadModels(); }
   function search() { clearTimeout(searchTimer); searchTimer = setTimeout(() => void loadModels(), 260); }
+  function syncView() { const view = location.hash.slice(1); activeView = view === 'report' ? 'results' : view === 'activity' ? 'activity' : 'run'; }
   async function refresh() { const response = await fetch('/api/overview', { cache: 'no-store' }); if (response.ok) { const body = await response.json(); refreshedRows = body.rows; refreshedJob = body.job; refreshedTimings = body.runTimings; } }
   async function run() {
     runError = '';
@@ -96,22 +98,26 @@
       const body = await response.json(); if (!response.ok) throw new Error(body.error || 'Could not start run.'); refreshedJob = body.job;
     } catch (cause) { runError = cause instanceof Error ? cause.message : 'Could not start run.'; }
   }
-  onMount(() => { void loadModels(); const timer = setInterval(() => { if (job?.status === 'running') void refresh(); }, 3500); return () => { clearInterval(timer); clearTimeout(searchTimer); }; });
+  onMount(() => { syncView(); window.addEventListener('hashchange', syncView); void loadModels(); const timer = setInterval(() => { if (job?.status === 'running') void refresh(); }, 1800); return () => { window.removeEventListener('hashchange', syncView); clearInterval(timer); clearTimeout(searchTimer); }; });
 </script>
 
 <div class="shell">
   <aside class="rail" aria-label="Primary navigation">
     <a class="brand" href="#top" aria-label="mattbench home"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>matt<span>bench</span></a>
-    <nav><a class="active" href="#run"><ArrowUpRight size={19} aria-hidden="true"/>Run a benchmark</a><a href="#report"><ChartNoAxesCombined size={19} aria-hidden="true"/>Results</a><a href="#activity"><Clock3 size={19} aria-hidden="true"/>Activity</a></nav>
+    <nav><a class:active={activeView === 'run'} href="#run" aria-current={activeView === 'run' ? 'page' : undefined}><ArrowUpRight size={19} aria-hidden="true"/>Run a benchmark</a><a class:active={activeView === 'results'} href="#report" aria-current={activeView === 'results' ? 'page' : undefined}><ChartNoAxesCombined size={19} aria-hidden="true"/>Results</a><a class:active={activeView === 'activity'} href="#activity" aria-current={activeView === 'activity' ? 'page' : undefined}><Clock3 size={19} aria-hidden="true"/>Activity</a></nav>
     <div class="rail-foot"><i></i> LOCAL CONSOLE <span>v0.1</span></div>
   </aside>
   <main id="top">
     <header class="topbar"><span>BENCH LAB <i>/</i> CONTROL ROOM</span><span class="engine"><i></i> INSPECT AI ENGINE <em></em> PILOT BUILD</span></header>
     <section class="masthead"><div><h1>Make your models<br /><em>prove it.</em></h1><p>Run the same task with a different model or prompt. See exactly what passed, how long it took, and what it used.</p></div><div class="dial" aria-hidden="true"><span>MB</span><small>MEASURE<br />THEN MOVE</small></div></section>
-    <div class="workspace">
-      <section class="run-panel" id="run" aria-labelledby="run-title">
+      <div class:single={activeView !== 'run'} class="workspace">
+      <section class="run-panel" class:view-hidden={activeView !== 'run'} id="run" aria-labelledby="run-title">
         <div class="section-head"><div><h2 id="run-title">Set up a run<span>.</span></h2><p>One pinned case set. One selected model. A clean comparison.</p></div><b>{visibleCases.length} {visibleCases.length === 1 ? 'TASK' : 'TASKS'}</b></div>
-        <div class="field"><div class="field-head"><label for="case-select">Benchmark case</label><span>Loaded from pinned fixtures</span></div><select id="case-select" class="case-select" bind:value={caseId}><option value="smoke">Smoke questions · all {availableCases.filter((entry) => entry.suite === 'smoke').length}</option>{#each availableCases.filter((entry) => entry.suite === 'ha') as entry (entry.id)}<option value={entry.id}>{entry.name}</option>{/each}</select>{#if caseId !== 'smoke'}<p class="case-hint">Real ha-mcp · fresh synthetic Home Assistant per case · setup and cleanup timed. Local or private models only.</p>{#if caseTiming}<p class="case-timing">Latest {caseTiming.status.replaceAll('_', ' ')} · setup {secs(caseTiming.setup_seconds)} · cleanup {secs(caseTiming.teardown_seconds)} · total {secs(caseTiming.total_wall_seconds)}</p>{/if}{/if}</div>
+        <div class="field case-field"><div class="field-head"><strong>Choose a benchmark</strong><span>Pinned cases · {availableCases.length} total</span></div><div class="case-options" role="group" aria-label="Benchmark selection">
+          <button class="case-option everything" class:selected={caseId === 'all'} type="button" aria-pressed={caseId === 'all'} onclick={() => caseId = 'all'}><span><strong>Run everything</strong><small>Smoke questions and every Home Assistant case</small></span><b>{availableCases.length} TASKS</b></button>
+          <button class="case-option" class:selected={caseId === 'smoke'} type="button" aria-pressed={caseId === 'smoke'} onclick={() => caseId = 'smoke'}><span><strong>Smoke questions</strong><small>{availableCases.filter((entry) => entry.suite === 'smoke').length} quick reasoning checks</small></span><b>SMOKE</b></button>
+          {#each availableCases.filter((entry) => entry.suite === 'ha') as entry (entry.id)}<button class="case-option" class:selected={caseId === entry.id} type="button" aria-pressed={caseId === entry.id} onclick={() => caseId = entry.id}><span><strong>{entry.name}</strong><small>Real ha-mcp · fresh synthetic home</small></span><b>HOME ASSISTANT</b></button>{/each}
+        </div>{#if caseId !== 'smoke'}<p class="case-hint">Home Assistant cases use fresh synthetic state per task. Run all or an individual HA case with FreeToken or a private endpoint.</p>{/if}{#if caseId !== 'all' && caseId !== 'smoke' && caseTiming}<p class="case-timing">Latest {caseTiming.status.replaceAll('_', ' ')} · setup {secs(caseTiming.setup_seconds)} · cleanup {secs(caseTiming.teardown_seconds)} · total {secs(caseTiming.total_wall_seconds)}</p>{/if}</div>
         <div class="field"><div class="field-head"><strong>Model source</strong><span>Choose where requests go</span></div><div class="source-grid" role="group" aria-label="Model source">
           {#each ['freetoken', 'openrouter', 'compatible'] as option (option)}<button type="button" class:selected={source === option} aria-pressed={source === option} onclick={() => chooseSource(option as Source)}><span class="symbol" aria-hidden="true">{#if option === 'freetoken'}<Radio size={22}/>{:else if option === 'openrouter'}<ArrowUpRight size={22}/>{:else}<Network size={22}/>{/if}</span><strong>{sourceNames[option as Source]}</strong><small>{option === 'freetoken' ? 'This machine' : option === 'openrouter' ? 'Hosted' : 'Private / LAN'}</small></button>{/each}
         </div></div>
@@ -120,21 +126,22 @@
           {#if catalogError}<div class="message error" role="alert">{catalogError} <button type="button" onclick={loadModels}>Retry</button></div>{:else if loading}<div class="catalog-empty">Checking available models…</div>{:else if !catalog.length}<div class="catalog-empty">{source === 'compatible' ? 'Enter an endpoint and connect to list its models.' : 'No matching models. Try another search.'}</div>{:else}<div class="model-list" role="radiogroup" aria-label="Available models">{#each catalog as option (option.id)}<label class:chosen={selectedModel === option.id}><input type="radio" name="model" value={option.id} bind:group={selectedModel} /><i></i><span><strong>{option.name}</strong><small>{option.id}</small></span>{#if option.contextLength}<em>{Math.round(option.contextLength / 1000)}K CTX</em>{/if}</label>{/each}</div>{/if}
         </div>
         {#if caseId === 'smoke'}<div class="field"><div class="field-head"><strong>Prompt treatment</strong><span>Same pinned questions</span></div><div class="variant-grid" role="group" aria-label="Prompt treatment">{#each [{ id: 'base', label: 'Base', sub: 'Original prompt' }, { id: 'careful', label: 'Careful', sub: 'Guided system note' }, { id: 'both', label: 'Compare both', sub: 'Side by side' }] as choice (choice.id)}<button type="button" class:selected={variant === choice.id} aria-pressed={variant === choice.id} onclick={() => variant = choice.id as typeof variant}><strong>{choice.label}</strong><small>{choice.sub}</small></button>{/each}</div></div>{/if}
-        {#if source === 'openrouter' && caseId === 'smoke'}<div class="paid"><h3><span>$</span> Paid run guard</h3><p>OpenRouter's workspace cap is the spend stop. This run makes exactly {maxCalls} requests with retries disabled.</p><label for="cap">Active workspace cap (USD)</label><input id="cap" type="number" min="0.01" max="20" step="0.01" bind:value={capUsd} /><label class="check"><input type="checkbox" bind:checked={capConfirmed} /> I confirm this cap is active in OpenRouter.</label>{#if !data.sources.openrouter.configured}<p class="warning">Add OPENROUTER_API_KEY to the ignored .env to enable hosted runs.</p>{/if}</div>{:else if source === 'openrouter'}<div class="message error" role="status">Select FreeToken or Other endpoint for this Home Assistant case.</div>{/if}
-        <div class="run-actions"><div class="call-count"><strong>{maxCalls}</strong><small>MAX MODEL<br />CALLS</small></div><button class="run-button" type="button" disabled={!canRun} onclick={run}><span>{job?.status === 'running' ? 'RUN IN PROGRESS' : 'RUN BENCHMARK'}</span><ArrowRight size={19} aria-hidden="true"/></button></div>
+        {#if source === 'openrouter' && caseId === 'smoke'}<div class="paid"><h3><span>$</span> Paid run guard</h3><p>OpenRouter's workspace cap is the spend stop. This run makes exactly {maxCalls} requests with retries disabled.</p><label for="cap">Active workspace cap (USD)</label><input id="cap" type="number" min="0.01" max="20" step="0.01" bind:value={capUsd} /><label class="check"><input type="checkbox" bind:checked={capConfirmed} /> I confirm this cap is active in OpenRouter.</label>{#if !data.sources.openrouter.configured}<p class="warning">Add OPENROUTER_API_KEY to the ignored .env to enable hosted runs.</p>{/if}</div>{:else if source === 'openrouter'}<div class="message error" role="status">Home Assistant and all-suite runs require FreeToken or a private endpoint. Choose another source to continue.</div>{/if}
+        <div class="run-actions"><div class="call-count"><strong>{caseId === 'all' ? totalCallCap : maxCalls}</strong><small>{#if caseId === 'all'}MAX CALLS<br />ACROSS SUITE{:else}MAX MODEL<br />CALLS{/if}</small></div><button class="run-button" type="button" disabled={!canRun} onclick={run}><span>{job?.status === 'running' ? 'RUN IN PROGRESS' : caseId === 'all' ? 'RUN EVERYTHING' : 'RUN BENCHMARK'}</span><ArrowRight size={19} aria-hidden="true"/></button></div>
         {#if runError}<div class="message error" role="alert">{runError}</div>{/if}
-        {#if job}<div class:working={job.status === 'running'} class="job" role="status"><i></i><span><strong>{job.status === 'running' ? 'Benchmark is running' : job.status === 'complete' ? 'Run complete' : 'Run stopped'}</strong><small>{job.status === 'running' ? `${sourceNames[job.source]} · ${short(job.model)} · results appear when complete` : job.error || `${sourceNames[job.source]} · ${short(job.model)}`}</small></span>{#if job.status !== 'running'}<button type="button" onclick={refresh}>Refresh</button>{/if}</div>{/if}
+        {#if job}<div class:working={job.status === 'running'} class="job" role="status" aria-live="polite"><i></i><span><strong>{job.status === 'running' ? `Run ${jobPhase}` : job.status === 'complete' ? 'Run complete' : job.status === 'interrupted' ? 'Run interrupted' : 'Run stopped'}</strong><small>{job.currentCaseId ? `${taskName(job.currentCaseId)} · ` : ''}{job.message || job.error || (job.totalCases ? `${job.completedCount || 0} of ${job.totalCases} steps finished` : `${sourceNames[job.source]} · ${short(job.model)}`)}</small>{#if job.totalCases}<span class="progress-track" role="progressbar" aria-label="Benchmark progress" aria-valuemin="0" aria-valuemax={job.totalCases} aria-valuenow={job.completedCount || 0}><i style:transform={`scaleX(${jobProgress / 100})`}></i></span>{/if}{#if job.completedCases?.length}<span class="case-status-list">{#each job.completedCases as done (done.caseId)}<span class:failed={done.status === 'failed'}>{done.status === 'failed' ? 'FAILED' : 'FINISHED'} · {taskName(done.caseId)}</span>{/each}</span>{/if}</span>{#if job.status !== 'running'}<button type="button" onclick={refresh}>Refresh</button>{/if}</div>{/if}
       </section>
       <section class="report-panel" id="report" aria-labelledby="report-title">
-        <div class="section-head"><div><h2 id="report-title">The scorecard<span>.</span></h2><p>Actual Inspect results from the selected pinned case set.</p></div><b>LIVE DATA</b></div>
+        <div class:hidden-view={activeView === 'activity'}>
+        <div class="section-head"><div><h2 id="report-title">The scorecard<span>.</span></h2><p>All pinned fixture cases. Missing outcomes stay marked NOT RUN.</p></div><b>LIVE DATA</b></div>
         <div class="note"><Info size={17} aria-hidden="true"/> These pilot cases screen the workflow. A few tasks cannot establish broad model superiority.</div>
         <div class="report-toolbar"><strong>MODEL × PROMPT</strong><div role="group" aria-label="Filter results"><button class:selected={filter === 'all'} onclick={() => filter = 'all'}>All</button><button class:selected={filter === 'local'} onclick={() => filter = 'local'}>Local</button><button class:selected={filter === 'hosted'} onclick={() => filter = 'hosted'}>Hosted</button></div></div>
         {#if matrix.length}
-          <div class="matrix-wrap"><table><thead><tr><th scope="col">Model / prompt</th>{#each visibleCases as entry (entry.id)}<th scope="col">{entry.name}</th>{/each}<th scope="col">Score</th><th scope="col">Model time</th>{#if caseId !== 'smoke'}<th scope="col">Setup</th><th scope="col">Cleanup</th>{/if}<th scope="col">Tokens</th><th scope="col">Cost</th></tr></thead><tbody>
+          <div class="matrix-wrap"><table><thead><tr><th scope="col">Model / prompt</th>{#each availableCases as entry (entry.id)}<th scope="col">{entry.name}</th>{/each}<th scope="col">Score</th><th scope="col">Model time</th><th scope="col">Setup</th><th scope="col">Cleanup</th><th scope="col">Tokens</th><th scope="col">Cost</th></tr></thead><tbody>
             {#each matrix as entry (entry.key)}
-              <tr><th scope="row"><strong>{short(entry.model)}</strong><small>{route(entry.model)} · {entry.prompt} prompt</small><button class="detail-link" type="button" aria-expanded={selectedKey === entry.key} onclick={() => selectedKey = selectedKey === entry.key ? '' : entry.key}>Run details</button></th>
-                {#each visibleCases as benchmark (benchmark.id)}{@const result = entry.cases[benchmark.id]}<td><span class:pass={result?.passed === true} class:miss={result?.passed === false} class="result">{result ? result.passed === true ? 'PASS' : result.passed === false ? 'MISS' : 'UNSCORED' : 'NOT RUN'}</span></td>{/each}
-                <td><div class="score"><strong>{entry.scored ? `${entry.pass}/${visibleCases.length}` : '—'}</strong><span><i style:width={`${entry.pass / visibleCases.length * 100}%`}></i></span></div></td><td class="numeric">{secs(entry.time)}</td>{#if caseId !== 'smoke'}<td class="numeric">{secs(entry.sample.run_timing?.setup_seconds)}</td><td class="numeric">{secs(entry.sample.run_timing?.teardown_seconds)}</td>{/if}<td class="numeric">{fmt(entry.tokens)}</td><td class="numeric">{entry.cost === null ? '—' : `$${entry.cost.toFixed(6)}`}</td>
+              <tr><th scope="row"><strong>{short(entry.model)}</strong><small>{route(entry.model)} · {entry.prompt} prompt · {entry.runId}</small><button class="detail-link" type="button" aria-expanded={selectedKey === entry.key} onclick={() => selectedKey = selectedKey === entry.key ? '' : entry.key}>Run details</button></th>
+                {#each availableCases as benchmark (benchmark.id)}{@const result = entry.cases[benchmark.id]}<td><span class:pass={result?.passed === true} class:miss={result?.passed === false} class="result">{result ? result.passed === true ? 'PASS' : result.passed === false ? 'MISS' : 'UNSCORED' : 'NOT RUN'}</span></td>{/each}
+                <td><div class="score"><strong>{entry.scored ? `${entry.pass}/${availableCases.length}` : '—'}</strong><span><i style:width={`${entry.pass / availableCases.length * 100}%`}></i></span></div></td><td class="numeric">{secs(entry.time)}</td><td class="numeric">{entry.setup ? secs(entry.setup) : '—'}</td><td class="numeric">{entry.cleanup ? secs(entry.cleanup) : '—'}</td><td class="numeric">{fmt(entry.tokens)}</td><td class="numeric">{entry.cost === null ? '—' : `$${entry.cost.toFixed(6)}`}</td>
               </tr>
             {/each}
           </tbody></table></div>
@@ -142,7 +149,7 @@
         {#if selectedRun}
           <div class="run-detail" aria-label="Selected run details"><div class="detail-head"><h3>Run details</h3><button type="button" onclick={() => selectedKey = ''}>Close</button></div><dl>
             <div><dt>Exact model ID</dt><dd>{name(selectedRun.model)}</dd></div><div><dt>Source</dt><dd>{route(selectedRun.model)}</dd></div>
-            <div><dt>Prompt</dt><dd>{selectedRun.prompt}</dd></div><div><dt>Run ID</dt><dd>{selectedRun.sample.run_id}</dd></div>
+            <div><dt>Prompt</dt><dd>{selectedRun.prompt}</dd></div><div><dt>Run ID</dt><dd>{selectedRun.sample.launcher_run_id || selectedRun.sample.run_id}</dd></div>
             <div><dt>Response model</dt><dd>{selectedRun.sample.concrete_response_model || 'Not reported'}</dd></div><div><dt>Started</dt><dd>{selectedRun.sample.started_at || 'Not reported'}</dd></div>
             <div><dt>Inference</dt><dd>Temperature {selectedRun.sample.inference?.temperature ?? '—'} · max {selectedRun.sample.inference?.max_tokens ?? '—'} tokens · {selectedRun.sample.inference?.max_retries ?? '—'} retries · {selectedRun.sample.inference?.timeout ?? '—'}s timeout</dd></div>
             <div><dt>Fixture / version</dt><dd>{selectedRun.sample.fixture || '—'} · task v{selectedRun.sample.task_version || '—'} · Inspect {selectedRun.sample.inspect_version || '—'}</dd></div>
@@ -150,7 +157,7 @@
             {#if selectedRun.sample.run_timing}<div><dt>Container setup / cleanup</dt><dd>{secs(selectedRun.sample.run_timing.setup_seconds)} / {secs(selectedRun.sample.run_timing.teardown_seconds)}</dd></div><div><dt>Evaluation / wall time</dt><dd>{secs(selectedRun.sample.run_timing.evaluation_seconds)} / {secs(selectedRun.sample.run_timing.total_wall_seconds)}</dd></div>{/if}
           </dl></div>
         {/if}
-        <div class="activity" id="activity"><div class="activity-head"><h3>Recent activity</h3><span>ALL TASK FAMILIES</span></div>{#if recent.length}{#each recent as row (`${row.run_id}-${row.sample_id}-${row.prompt_variant}`)}<div class="activity-row"><i class:good={row.passed === true} class:bad={row.passed === false}></i><div><strong>{taskName(row.sample_id)}</strong><small>{short(row.model)} · {row.prompt_variant} prompt</small></div><aside><strong>{row.passed === true ? 'PASS' : row.passed === false ? 'MISS' : '—'}</strong><small>{secs(row.latency_seconds)} · {fmt(tokens(row))} tok</small></aside></div>{/each}{:else}<p class="activity-empty">Run a benchmark to build an activity trail.</p>{/if}</div>
+        </div><div class="activity" class:hidden-view={activeView !== 'activity'} id="activity"><div class="activity-head"><h3>Activity</h3><span>{recent.length} TASK RECORDS</span></div>{#if recent.length}{#each recent as row (`${row.run_id}-${row.sample_id}-${row.prompt_variant}`)}<div class="activity-row"><i class:good={row.passed === true} class:bad={row.passed === false}></i><div><strong>{taskName(row.sample_id)}</strong><small>{short(row.model)} · {row.prompt_variant} prompt · {row.started_at || 'Time not reported'} · run {row.launcher_run_id || row.run_id}</small></div><aside><strong>{row.passed === true ? 'PASS' : row.passed === false ? 'MISS' : 'UNSCORED'}</strong><small>{secs(row.latency_seconds)} · {fmt(tokens(row))} tok</small></aside></div>{/each}{:else}<p class="activity-empty">Run a benchmark to build an activity trail.</p>{/if}</div>
       </section>
     </div>
     <footer><span>mattbench / personal evaluation lab</span><span>Fixtures and scores stay pinned. Raw traces stay local.</span></footer>

@@ -29,6 +29,8 @@ def main() -> None:
             )}
     for path in sorted(LOG_DIR.rglob("*.eval")):
         log = read_eval_log(path)
+        relative_parts = path.relative_to(LOG_DIR).parts
+        launcher_run_id = relative_parts[1] if len(relative_parts) > 2 and relative_parts[0] in {"selected", "ha"} and relative_parts[1].isdigit() and 14 <= len(relative_parts[1]) <= 20 else None
         for sample in log.samples or []:
             scores = {name: score.value for name, score in (sample.scores or {}).items()}
             score_metadata = {
@@ -48,6 +50,7 @@ def main() -> None:
                 {
                     "task": log.eval.task,
                     "run_id": log.eval.run_id,
+                    "launcher_run_id": launcher_run_id,
                     "eval_id": log.eval.eval_id,
                     "sample_id": sample.id,
                     "category": (sample.metadata or {}).get("category"),

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, mkdirSync, writeFileSync, openSync, closeSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, mkdirSync, writeFileSync, renameSync, openSync, closeSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { spawn } from 'node:child_process';
 
@@ -9,7 +9,7 @@ const jobFile = join(artifactDir, 'job.json');
 export type Source = 'freetoken' | 'openrouter' | 'compatible';
 export type ModelOption = { id: string; name: string; contextLength?: number; promptPrice?: string; completionPrice?: string };
 export type Case = { id: string; name: string; suite: 'smoke' | 'ha'; fixture: string };
-export type Job = { id: string; status: 'running' | 'complete' | 'failed' | 'interrupted'; source: Source; model: string; variant: string; caseId: string; startedAt: string; finishedAt?: string; error?: string; pid?: number };
+export type Job = { id: string; status: 'running' | 'complete' | 'failed' | 'interrupted'; source: Source; model: string; variant: string; caseId: string; startedAt: string; finishedAt?: string; error?: string; pid?: number; phase: 'validating' | 'preparing' | 'running' | 'exporting' | 'complete' | 'failed' | 'interrupted'; currentCaseId?: string; completedCases: { caseId: string; status: 'complete' | 'failed'; message?: string }[]; completedCount: number; totalCases: number; message: string; updatedAt: string };
 
 export function cases(): Case[] {
   const smoke = JSON.parse(readFileSync(join(root, 'tasks', 'smoke.json'), 'utf8')) as { id: string; name?: string }[];
@@ -98,7 +98,7 @@ export function rows() {
   const data = JSON.parse(readFileSync(path, 'utf8'));
   if (!Array.isArray(data.rows)) return [];
   return data.rows.map((row: Record<string, unknown>) => ({
-    task: row.task, run_id: row.run_id, sample_id: row.sample_id, category: row.category,
+    task: row.task, run_id: row.run_id, launcher_run_id: row.launcher_run_id, sample_id: row.sample_id, category: row.category,
     prompt_variant: row.prompt_variant, status: row.status, model: row.model,
     concrete_response_model: row.concrete_response_model, passed: row.passed,
     latency_seconds: row.latency_seconds, usage: row.usage, tool_calls: row.tool_calls,
@@ -110,15 +110,27 @@ export function rows() {
 
 function writeJob(job: Job) {
   mkdirSync(artifactDir, { recursive: true });
-  writeFileSync(jobFile, JSON.stringify(job, null, 2) + '\n');
+  const temporary = `${jobFile}.tmp`;
+  writeFileSync(temporary, JSON.stringify(job, null, 2) + '\n');
+  renameSync(temporary, jobFile);
 }
 
 export function currentJob(): Job | null {
   if (!existsSync(jobFile)) return null;
   const job: Job = JSON.parse(readFileSync(jobFile, 'utf8'));
+  const progressPath = join(artifactDir, `${job.id}.progress.json`);
+  if (job.status === 'running' && existsSync(progressPath)) {
+    try {
+      const progress = JSON.parse(readFileSync(progressPath, 'utf8'));
+      Object.assign(job, progress);
+    } catch { /* Keep the last durable job snapshot while a progress write is in flight. */ }
+  }
   if (job.status === 'running' && Date.now() - Date.parse(job.startedAt) > 10 * 60_000) {
     try { if (job.pid) process.kill(job.pid, 0); else throw new Error('worker ended'); }
-    catch { job.status = 'interrupted'; job.finishedAt = new Date().toISOString(); writeJob(job); }
+    catch {
+      job.status = 'interrupted'; job.phase = 'interrupted'; job.message = 'Worker stopped before the run completed.';
+      job.updatedAt = job.finishedAt = new Date().toISOString(); writeJob(job);
+    }
   }
   return job;
 }
@@ -128,22 +140,32 @@ export function startJob(input: { source: Source; model: string; variant: 'base'
   if (!/^[\w./:-]{1,160}$/.test(input.model)) throw new Error('Choose a valid model ID from the catalog.');
   if (!['base', 'careful', 'both'].includes(input.variant)) throw new Error('Choose a prompt variant.');
   const haCase = cases().find((entry) => entry.id === input.caseId && entry.suite === 'ha');
-  if (input.caseId !== 'smoke' && !haCase) throw new Error('Choose a pinned benchmark case.');
+  if (input.caseId !== 'all' && input.caseId !== 'smoke' && !haCase) throw new Error('Choose a pinned benchmark case.');
+  const allCases = input.caseId === 'all';
+  if (allCases && input.source === 'openrouter') throw new Error('The all-suite run is available only for local or private model endpoints.');
+  if (allCases && input.variant !== 'base') throw new Error('The all-suite run uses the base prompt variant.');
   if (haCase && input.variant !== 'base') throw new Error('Home Assistant cases currently use the base prompt.');
   if (haCase && input.source === 'openrouter') throw new Error('Home Assistant write cases currently run against local or private models only.');
-  const expectedCalls = haCase ? 10 : input.variant === 'both' ? 4 : 2;
-  if (input.maxCalls !== expectedCalls) throw new Error(`This selection makes exactly ${expectedCalls} calls.`);
+  const haCaseCount = cases().filter((entry) => entry.suite === 'ha').length;
+  const expectedCalls = allCases ? 2 + 10 * haCaseCount : haCase ? 10 : input.variant === 'both' ? 4 : 2;
+  if (input.maxCalls !== expectedCalls) throw new Error(allCases
+    ? `Run-all is capped at ${expectedCalls} calls: 2 smoke calls plus 10 for each of ${haCaseCount} HA cases.`
+    : `This selection makes exactly ${expectedCalls} calls.`);
   const config = settings();
   const base = input.source === 'openrouter' ? '' : compatibleBase(input.source === 'freetoken' ? config.localBase : input.baseUrl || '');
   if (input.source === 'openrouter' && (!config.openrouterReady || !input.capConfirmed || typeof input.capUsd !== 'number' || !(input.capUsd > 0 && input.capUsd <= 20))) {
     throw new Error('OpenRouter needs an API key, an active workspace cap up to $20, and explicit cap confirmation.');
   }
-  const id = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
-  const job: Job = { id, status: 'running', source: input.source, model: input.model, variant: input.variant, caseId: input.caseId, startedAt: new Date().toISOString() };
+  const id = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 17);
+  const count = allCases ? haCaseCount + 1 : 1;
+  const now = new Date().toISOString();
+  const job: Job = { id, status: 'running', phase: allCases ? 'validating' : 'preparing', currentCaseId: allCases ? undefined : input.caseId, source: input.source, model: input.model, variant: input.variant, caseId: input.caseId, startedAt: now, updatedAt: now, completedCases: [], completedCount: 0, totalCases: count, message: allCases ? 'Validating pinned suite' : `Preparing ${haCase?.name || 'smoke set'}` };
   mkdirSync(artifactDir, { recursive: true });
   const logFd = openSync(join(artifactDir, `${id}.log`), 'w');
-  const args = haCase
-    ? [join(root, 'scripts', 'run-inspect-ha-pilot.py'), '--case', input.caseId, '--source', input.source, '--model', input.model, '--run-id', id]
+  const args = allCases
+    ? [join(root, 'scripts', 'run-inspect-suite.py'), '--source', input.source, '--model', input.model, '--run-id', id, '--progress-file', join(artifactDir, `${id}.progress.json`)]
+    : haCase
+    ? [join(root, 'scripts', 'run-inspect-ha-pilot.py'), '--case', input.caseId, '--source', input.source, '--model', input.model, '--run-id', id, '--progress-file', join(artifactDir, `${id}.progress.json`)]
     : [join(root, 'scripts', 'run-inspect-selected.py'), '--source', input.source, '--model', input.model, '--variant', input.variant, '--max-calls', String(expectedCalls), '--run-id', id];
   if (base) args.push('--base-url', base);
   if (input.source === 'openrouter') args.push('--cap-usd', String(input.capUsd));
@@ -157,14 +179,22 @@ export function startJob(input: { source: Source; model: string; variant: 'base'
   job.pid = child.pid;
   writeJob(job);
   child.on('error', () => {
-    writeJob({ ...job, status: 'failed', finishedAt: new Date().toISOString(), error: 'Could not start Inspect. Install the Python dependencies in .venv.' });
+    writeJob({ ...job, status: 'failed', phase: 'failed', updatedAt: new Date().toISOString(), finishedAt: new Date().toISOString(), error: 'Could not start Inspect. Install the Python dependencies in .venv.', message: 'Could not start benchmark.' });
   });
   child.on('exit', (code) => {
-    const status = code === 0 ? 'complete' : 'failed';
-    writeJob({ ...job, pid: undefined });
+    const progressPath = join(artifactDir, `${id}.progress.json`);
+    let progress = {};
+    try { progress = JSON.parse(readFileSync(progressPath, 'utf8')); } catch { /* no suite progress file for single-case runs */ }
+    const caseResults = allCases ? {} : { completedCases: [{ caseId: input.caseId, status: code === 0 ? 'complete' as const : 'failed' as const }], completedCount: 1, totalCases: 1 };
+    const exporting: Job = { ...job, ...progress, ...caseResults, pid: undefined, phase: 'exporting', message: 'Exporting Inspect results', updatedAt: new Date().toISOString() };
+    writeJob(exporting);
     const exporter = spawn(join(root, '.venv', 'bin', 'python'), [join(root, 'scripts', 'inspect-report.py')], { cwd: root, stdio: 'ignore', env: { PATH: process.env.PATH || '', HOME: process.env.HOME || '' } });
-    exporter.on('exit', () => writeJob({ ...job, status, finishedAt: new Date().toISOString(), error: code === 0 ? undefined : 'Inspect stopped. See the ignored local run log for details.' }));
-    exporter.on('error', () => writeJob({ ...job, status: 'failed', finishedAt: new Date().toISOString(), error: 'Could not export Inspect results.' }));
+    exporter.on('exit', (exportCode) => {
+      const ok = code === 0 && exportCode === 0;
+      const finishedAt = new Date().toISOString();
+      writeJob({ ...exporting, status: ok ? 'complete' : 'failed', phase: ok ? 'complete' : 'failed', finishedAt, updatedAt: finishedAt, message: ok ? 'Run and export complete.' : 'Run or export failed; see the ignored local run log.', error: ok ? undefined : code !== 0 ? 'Inspect stopped. See the ignored local run log for details.' : 'Could not export Inspect results.' });
+    });
+    exporter.on('error', () => writeJob({ ...exporting, status: 'failed', phase: 'failed', finishedAt: new Date().toISOString(), updatedAt: new Date().toISOString(), message: 'Could not export Inspect results.', error: 'Could not export Inspect results.' }));
   });
   return job;
 }

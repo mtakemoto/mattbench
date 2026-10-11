@@ -169,6 +169,23 @@ def matches(actual: dict, wanted: dict) -> bool:
                for key, value in wanted.items())
 
 
+def progress(path: str, case_id: str, message: str, phase: str = "running") -> None:
+    if not path:
+        return
+    destination = Path(path)
+    current = {}
+    try:
+        current = json.loads(destination.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+    current.update({"phase": phase, "currentCaseId": case_id, "message": message,
+                    "updatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
+    temporary = destination.with_suffix(destination.suffix + ".tmp")
+    temporary.parent.mkdir(parents=True, exist_ok=True)
+    temporary.write_text(json.dumps(current) + "\n")
+    temporary.replace(destination)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--case", choices=sorted(ha_cases()), default="mxz_coordinator_target")
@@ -176,11 +193,13 @@ def main() -> None:
     parser.add_argument("--model")
     parser.add_argument("--base-url")
     parser.add_argument("--run-id", default="")
+    parser.add_argument("--progress-file", default="")
     parser.add_argument("--preflight-only", action="store_true", help="Verify fixture and service path without a model")
     args = parser.parse_args()
     if args.run_id and (not args.run_id.isdigit() or not 14 <= len(args.run_id) <= 20):
         parser.error("Run ID must be a 14–20 digit UTC timestamp.")
     case = ha_cases()[args.case]
+    progress(args.progress_file, args.case, "Validating model endpoint and pinned fixture", "preparing")
     if not args.preflight_only:
         if not args.base_url or not args.model:
             parser.error("Model and base URL are required for a benchmark run.")
@@ -202,6 +221,7 @@ def main() -> None:
     ha_container = f"mattbench-ha-{suffix}"
     mcp_container = f"mattbench-mcp-{suffix}"
     with tempfile.TemporaryDirectory(prefix="mattbench-ha-") as temp:
+        progress(args.progress_file, args.case, "Preparing fictional fixture and isolated Home Assistant", "preparing")
         config = Path(temp) / "config"
         config.mkdir()
         (config / "configuration.yaml").write_text("default_config:\nhomeassistant:\n  unit_system: imperial\n")
@@ -210,8 +230,9 @@ def main() -> None:
             raise RuntimeError("Case fixture must be a pinned file in fixtures/ha")
         shutil.copy2(fixture, config / fixture.name)
         install_synthetic_component(config)
-        docker("network", "create", "--internal", network)
         try:
+            progress(args.progress_file, args.case, "Starting disposable Home Assistant")
+            docker("network", "create", "--internal", network)
             docker("run", "-d", "--name", ha_container, "--network", network,
                    "--mount", f"type=bind,src={config},dst=/config",
                    "--env", "TZ=UTC", HA_IMAGE)
@@ -233,6 +254,7 @@ def main() -> None:
             env_file = Path(temp) / "mcp.env"
             env_file.write_text(f"HOMEASSISTANT_URL=http://{ha_container}:8123\nHOMEASSISTANT_TOKEN={token}\n")
             env_file.chmod(0o600)
+            progress(args.progress_file, args.case, "Starting ha-mcp in the isolated test network")
             docker("run", "-d", "--name", mcp_container, "--network", network,
                    "--env-file", str(env_file), MCP_IMAGE, "sleep", "infinity")
             os.environ["MATTBENCH_SYNTHETIC_HA_CONTAINER"] = ha_container
@@ -240,6 +262,7 @@ def main() -> None:
             os.environ["MATTBENCH_SYNTHETIC_MCP_CONTAINER"] = mcp_container
             setup_done = time.monotonic()
             if args.preflight_only:
+                progress(args.progress_file, args.case, "Checking the synthetic service and state readback")
                 asyncio.run(apply_preflight_action(mcp_container, case["action"], list(case["expected"])))
                 actual = {entity: state(ha_container, token, entity) for entity in case["expected"]}
                 if not all(matches(actual[entity], wanted) for entity, wanted in case["expected"].items()):
@@ -247,26 +270,40 @@ def main() -> None:
                 eval_done = time.monotonic()
                 outcome = "preflight_passed"
                 print(f"{args.case}: deterministic real ha-mcp preflight passed", flush=True)
-                return
-            print(f"Running {args.case} through real ha-mcp and disposable Synthetic Home", flush=True)
-            logs = run_eval(
-                tasks=[ha_case(args.case)], model=f"openai-api/{args.source}/{args.model}",
-                model_args={"strict_tools": False}, temperature=0, max_tokens=512,
-                max_retries=0, timeout=120, max_samples=1, max_tasks=1,
-                log_dir=str(ROOT / "artifacts/inspect/ha" / (args.run_id or suffix)), display="plain",
-            )
-            eval_done = time.monotonic()
-            for log in logs:
-                log_ids.append(log.eval.eval_id)
-                print(f"{log.eval.task}: {log.status}; log={log.location}")
-            if any(log.status != "success" for log in logs):
-                raise SystemExit(1)
-            outcome = "complete"
+            else:
+                progress(args.progress_file, args.case, "Running model against the disposable Home Assistant")
+                print(f"Running {args.case} through real ha-mcp and disposable Synthetic Home", flush=True)
+                logs = run_eval(
+                    tasks=[ha_case(args.case)], model=f"openai-api/{args.source}/{args.model}",
+                    model_args={"strict_tools": False}, temperature=0, max_tokens=512,
+                    max_retries=0, timeout=120, max_samples=1, max_tasks=1,
+                    log_dir=str(ROOT / "artifacts/inspect/ha" / (args.run_id or suffix)), display="plain",
+                )
+                eval_done = time.monotonic()
+                for log in logs:
+                    log_ids.append(log.eval.eval_id)
+                    print(f"{log.eval.task}: {log.status}; log={log.location}")
+                if any(log.status != "success" for log in logs):
+                    raise SystemExit(1)
+                outcome = "complete"
         finally:
+            progress(args.progress_file, args.case, "Cleaning up disposable containers and network")
             cleanup_started = time.monotonic()
-            subprocess.run(["docker", "exec", "-u", "0", ha_container, "chown", "-R", f"{os.getuid()}:{os.getgid()}", "/config"], capture_output=True)
-            subprocess.run(["docker", "rm", "-f", mcp_container, ha_container], capture_output=True)
-            subprocess.run(["docker", "network", "rm", network], capture_output=True)
+            cleanup_failed = False
+            for command in (
+                ["docker", "exec", "-u", "0", ha_container, "chown", "-R", f"{os.getuid()}:{os.getgid()}", "/config"],
+                ["docker", "rm", "-f", mcp_container, ha_container],
+                ["docker", "network", "rm", network],
+            ):
+                result = subprocess.run(command, capture_output=True)
+                # Missing resources are expected when setup failed before creation.
+                diagnostic = (result.stderr or b"").lower()
+                missing = b"no such container" in diagnostic or b"no such network" in diagnostic or b"not found" in diagnostic
+                if result.returncode and not missing:
+                    cleanup_failed = True
+            if cleanup_failed and outcome in {"complete", "preflight_passed"}:
+                outcome = "failed"
+                print("Could not restore ownership of disposable HA config during cleanup", file=sys.stderr, flush=True)
             finished = time.monotonic()
             metrics = {
                 "case_id": args.case, "status": outcome, "eval_ids": log_ids,
@@ -277,7 +314,10 @@ def main() -> None:
             }
             timing_dir = ROOT / "artifacts/inspect/ha-timing"
             timing_dir.mkdir(parents=True, exist_ok=True)
-            (timing_dir / f"{args.run_id or suffix}.json").write_text(json.dumps(metrics, indent=2) + "\n")
+            (timing_dir / f"{args.run_id or suffix}-{args.case}.json").write_text(json.dumps(metrics, indent=2) + "\n")
+            progress(args.progress_file, args.case, "HA case finished" if outcome in {"complete", "preflight_passed"} else "HA case failed", "running" if args.progress_file else "running")
+    if outcome not in {"complete", "preflight_passed"}:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
