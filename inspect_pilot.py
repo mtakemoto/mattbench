@@ -122,6 +122,8 @@ def synthetic_ha_state(case: dict) -> object:
             explanation=("Final synthetic states and tool sequence matched pinned assertions."
                          if correct and trace_ok else
                          "Final synthetic states did not match pinned assertions." if not correct else trace_reason),
+            metadata={"state_correct": correct, "trace_valid": trace_ok,
+                      "trace_reason": trace_reason if not trace_ok else None},
         )
     return score
 
@@ -137,14 +139,22 @@ def safe_ha_trace(messages: list, case: dict) -> tuple[bool, str]:
         if call.function != "ha_call_service":
             continue
         args = call.arguments
-        if set(args) - {"domain", "service", "entity_id", "data", "return_response"}:
+        if set(args) - {"domain", "service", "entity_id", "data", "return_response", "wait"}:
             return False, "A service call included an unapproved target or parameter."
         data = args.get("data") or {}
         try:
             data = json.loads(data) if isinstance(data, str) else data
         except json.JSONDecodeError:
             return False, "A service call contained invalid data."
-        if (args.get("domain"), args.get("service"), args.get("entity_id"), data) != (
+        if not isinstance(data, dict):
+            return False, "A service call contained invalid data."
+        data = dict(data)
+        nested_entity = data.pop("entity_id", None)
+        direct_entity = args.get("entity_id")
+        if direct_entity and nested_entity and direct_entity != nested_entity:
+            return False, "A service call contained conflicting targets."
+        effective_entity = direct_entity or nested_entity
+        if (args.get("domain"), args.get("service"), effective_entity, data) != (
             action["domain"], action["service"], expected_entity, expected_data
         ):
             return False, "A service call did not match the allowed target and action."
@@ -184,10 +194,10 @@ def ha_case(case_id: str = "mxz_coordinator_target") -> Task:
         )],
         solver=react(tools=[mcp_tools(server, tools=["ha_search", "ha_get_state", "ha_call_service"])]),
         scorer=synthetic_ha_state(case),
-        turn_limit=10,
+        turn_limit=case["max_model_calls"],
         time_limit=180,
         display_name=f"Mattbench HA: {case['name']}",
-        version="3",
+        version="4",
     )
 
 

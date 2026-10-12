@@ -8,15 +8,15 @@ const jobFile = join(artifactDir, 'job.json');
 
 export type Source = 'freetoken' | 'openrouter' | 'compatible';
 export type ModelOption = { id: string; name: string; contextLength?: number; promptPrice?: string; completionPrice?: string };
-export type Case = { id: string; name: string; suite: 'smoke' | 'ha'; fixture: string };
-export type Job = { id: string; status: 'running' | 'complete' | 'failed' | 'interrupted'; source: Source; model: string; variant: string; caseId: string; startedAt: string; finishedAt?: string; error?: string; pid?: number; phase: 'validating' | 'preparing' | 'running' | 'exporting' | 'complete' | 'failed' | 'interrupted'; currentCaseId?: string; completedCases: { caseId: string; status: 'complete' | 'failed'; message?: string }[]; completedCount: number; totalCases: number; message: string; updatedAt: string };
+export type Case = { id: string; name: string; suite: 'smoke' | 'ha'; fixture: string; maxModelCalls?: number };
+export type Job = { id: string; status: 'running' | 'complete' | 'failed' | 'interrupted'; source: Source; model: string; variant: string; caseId: string; startedAt: string; finishedAt?: string; error?: string; pid?: number; phase: 'validating' | 'preparing' | 'running' | 'billing' | 'exporting' | 'complete' | 'failed' | 'interrupted'; currentCaseId?: string; completedCases: { caseId: string; status: 'complete' | 'failed'; passed?: boolean; modelCalls?: number; message?: string }[]; completedCount: number; totalCases: number; message: string; updatedAt: string };
 
 export function cases(): Case[] {
   const smoke = JSON.parse(readFileSync(join(root, 'tasks', 'smoke.json'), 'utf8')) as { id: string; name?: string }[];
-  const ha = JSON.parse(readFileSync(join(root, 'tasks', 'inspect-ha-cases.json'), 'utf8')) as { id: string; name: string; fixture: string }[];
+  const ha = JSON.parse(readFileSync(join(root, 'tasks', 'inspect-ha-cases.json'), 'utf8')) as { id: string; name: string; fixture: string; max_model_calls: number }[];
   return [
     ...smoke.map((entry) => ({ id: entry.id, name: entry.name || entry.id.replaceAll('_', ' '), suite: 'smoke' as const, fixture: 'tasks/smoke.json' })),
-    ...ha.map((entry) => ({ id: entry.id, name: entry.name, suite: 'ha' as const, fixture: entry.fixture }))
+    ...ha.map((entry) => ({ id: entry.id, name: entry.name, suite: 'ha' as const, fixture: entry.fixture, maxModelCalls: entry.max_model_calls }))
   ];
 }
 
@@ -100,9 +100,9 @@ export function rows() {
   return data.rows.map((row: Record<string, unknown>) => ({
     task: row.task, run_id: row.run_id, launcher_run_id: row.launcher_run_id, sample_id: row.sample_id, category: row.category,
     prompt_variant: row.prompt_variant, status: row.status, model: row.model,
-    concrete_response_model: row.concrete_response_model, passed: row.passed,
-    latency_seconds: row.latency_seconds, usage: row.usage, tool_calls: row.tool_calls,
-    score_metadata: row.score_metadata, started_at: row.started_at, fixture: row.fixture,
+    concrete_response_model: row.concrete_response_model, routed_models: row.routed_models, providers: row.providers, passed: row.passed,
+    latency_seconds: row.latency_seconds, usage: row.usage, tool_calls: row.tool_calls, model_calls: row.model_calls,
+    score_metadata: row.score_metadata, score_explanation: row.score_explanation, started_at: row.started_at, fixture: row.fixture,
     inference: row.inference, inspect_version: row.inspect_version, task_version: row.task_version,
     log_file: row.log_file, run_timing: row.run_timing
   }));
@@ -142,22 +142,21 @@ export function startJob(input: { source: Source; model: string; variant: 'base'
   const haCase = cases().find((entry) => entry.id === input.caseId && entry.suite === 'ha');
   if (input.caseId !== 'all' && input.caseId !== 'smoke' && !haCase) throw new Error('Choose a pinned benchmark case.');
   const allCases = input.caseId === 'all';
-  if (allCases && input.source === 'openrouter') throw new Error('The all-suite run is available only for local or private model endpoints.');
   if (allCases && input.variant !== 'base') throw new Error('The all-suite run uses the base prompt variant.');
   if (haCase && input.variant !== 'base') throw new Error('Home Assistant cases currently use the base prompt.');
-  if (haCase && input.source === 'openrouter') throw new Error('Home Assistant write cases currently run against local or private models only.');
-  const haCaseCount = cases().filter((entry) => entry.suite === 'ha').length;
-  const expectedCalls = allCases ? 2 + 10 * haCaseCount : haCase ? 10 : input.variant === 'both' ? 4 : 2;
+  const haCases = cases().filter((entry) => entry.suite === 'ha');
+  if (haCases.some((entry) => !Number.isInteger(entry.maxModelCalls) || entry.maxModelCalls! < 1)) throw new Error('Every HA case needs a positive model call limit.');
+  const expectedCalls = allCases ? 2 + haCases.reduce((sum, entry) => sum + entry.maxModelCalls!, 0) : haCase ? haCase.maxModelCalls! : input.variant === 'both' ? 4 : 2;
   if (input.maxCalls !== expectedCalls) throw new Error(allCases
-    ? `Run-all is capped at ${expectedCalls} calls: 2 smoke calls plus 10 for each of ${haCaseCount} HA cases.`
-    : `This selection makes exactly ${expectedCalls} calls.`);
+    ? `Run-all is capped at ${expectedCalls} model calls: 2 smoke calls plus each HA case's pinned limit.`
+    : `This selection allows at most ${expectedCalls} model calls.`);
   const config = settings();
   const base = input.source === 'openrouter' ? '' : compatibleBase(input.source === 'freetoken' ? config.localBase : input.baseUrl || '');
   if (input.source === 'openrouter' && (!config.openrouterReady || !input.capConfirmed || typeof input.capUsd !== 'number' || !(input.capUsd > 0 && input.capUsd <= 20))) {
     throw new Error('OpenRouter needs an API key, an active workspace cap up to $20, and explicit cap confirmation.');
   }
   const id = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 17);
-  const count = allCases ? haCaseCount + 1 : 1;
+  const count = allCases ? haCases.length + 1 : 1;
   const now = new Date().toISOString();
   const job: Job = { id, status: 'running', phase: allCases ? 'validating' : 'preparing', currentCaseId: allCases ? undefined : input.caseId, source: input.source, model: input.model, variant: input.variant, caseId: input.caseId, startedAt: now, updatedAt: now, completedCases: [], completedCount: 0, totalCases: count, message: allCases ? 'Validating pinned suite' : `Preparing ${haCase?.name || 'smoke set'}` };
   mkdirSync(artifactDir, { recursive: true });
@@ -187,14 +186,29 @@ export function startJob(input: { source: Source; model: string; variant: 'base'
     try { progress = JSON.parse(readFileSync(progressPath, 'utf8')); } catch { /* no suite progress file for single-case runs */ }
     const caseResults = allCases ? {} : { completedCases: [{ caseId: input.caseId, status: code === 0 ? 'complete' as const : 'failed' as const }], completedCount: 1, totalCases: 1 };
     const exporting: Job = { ...job, ...progress, ...caseResults, pid: undefined, phase: 'exporting', message: 'Exporting Inspect results', updatedAt: new Date().toISOString() };
-    writeJob(exporting);
-    const exporter = spawn(join(root, '.venv', 'bin', 'python'), [join(root, 'scripts', 'inspect-report.py')], { cwd: root, stdio: 'ignore', env: { PATH: process.env.PATH || '', HOME: process.env.HOME || '' } });
-    exporter.on('exit', (exportCode) => {
-      const ok = code === 0 && exportCode === 0;
-      const finishedAt = new Date().toISOString();
-      writeJob({ ...exporting, status: ok ? 'complete' : 'failed', phase: ok ? 'complete' : 'failed', finishedAt, updatedAt: finishedAt, message: ok ? 'Run and export complete.' : 'Run or export failed; see the ignored local run log.', error: ok ? undefined : code !== 0 ? 'Inspect stopped. See the ignored local run log for details.' : 'Could not export Inspect results.' });
-    });
-    exporter.on('error', () => writeJob({ ...exporting, status: 'failed', phase: 'failed', finishedAt: new Date().toISOString(), updatedAt: new Date().toISOString(), message: 'Could not export Inspect results.', error: 'Could not export Inspect results.' }));
+    const exportResults = (billingOk: boolean) => {
+      writeJob(exporting);
+      const exporter = spawn(join(root, '.venv', 'bin', 'python'), [join(root, 'scripts', 'inspect-report.py')], { cwd: root, stdio: 'ignore', env: { PATH: process.env.PATH || '', HOME: process.env.HOME || '' } });
+      exporter.on('exit', (exportCode) => {
+        const ok = code === 0 && exportCode === 0;
+        const finishedAt = new Date().toISOString();
+        const resultRows = rows().filter((row: Record<string, unknown>) => row.launcher_run_id === id);
+        const completedCases = exporting.completedCases.map((entry) => {
+          const selected = resultRows.filter((row: Record<string, unknown>) => entry.caseId === 'smoke' ? ['strawberry_r_count', 'car_wash_transport'].includes(String(row.sample_id)) : row.sample_id === entry.caseId);
+          return selected.length ? { ...entry, passed: selected.every((row: Record<string, unknown>) => row.passed === true), modelCalls: selected.reduce((sum: number, row: Record<string, unknown>) => sum + Number(row.model_calls || 0), 0) } : entry;
+        });
+        writeJob({ ...exporting, completedCases, status: ok ? 'complete' : 'failed', phase: ok ? 'complete' : 'failed', finishedAt, updatedAt: finishedAt, message: ok ? billingOk ? 'Run and export complete.' : 'Run finished; billed cost unavailable.' : 'Run or export failed; see the ignored local run log.', error: ok ? undefined : code !== 0 ? 'Inspect stopped. See the ignored local run log for details.' : 'Could not export Inspect results.' });
+      });
+      exporter.on('error', () => writeJob({ ...exporting, status: 'failed', phase: 'failed', finishedAt: new Date().toISOString(), updatedAt: new Date().toISOString(), message: 'Could not export Inspect results.', error: 'Could not export Inspect results.' }));
+    };
+    if (input.source === 'openrouter') {
+      writeJob({ ...exporting, phase: 'billing', message: 'Reading billed OpenRouter cost' });
+      const billing = spawn(join(root, '.venv', 'bin', 'python'), [join(root, 'scripts', 'openrouter-billing.py'), '--run-id', id], { cwd: root, stdio: 'ignore', env: { PATH: process.env.PATH || '', HOME: process.env.HOME || '', OPENROUTER_API_KEY: config.openrouterKey } });
+      let billingFinished = false;
+      const finishBilling = (ok: boolean) => { if (!billingFinished) { billingFinished = true; exportResults(ok); } };
+      billing.on('exit', (billingCode) => finishBilling(billingCode === 0));
+      billing.on('error', () => finishBilling(false));
+    } else exportResults(true);
   });
   return job;
 }

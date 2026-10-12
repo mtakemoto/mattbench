@@ -189,9 +189,10 @@ def progress(path: str, case_id: str, message: str, phase: str = "running") -> N
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--case", choices=sorted(ha_cases()), default="mxz_coordinator_target")
-    parser.add_argument("--source", choices=("freetoken", "compatible"), default="freetoken")
+    parser.add_argument("--source", choices=("freetoken", "openrouter", "compatible"), default="freetoken")
     parser.add_argument("--model")
     parser.add_argument("--base-url")
+    parser.add_argument("--cap-usd", type=float)
     parser.add_argument("--run-id", default="")
     parser.add_argument("--progress-file", default="")
     parser.add_argument("--preflight-only", action="store_true", help="Verify fixture and service path without a model")
@@ -201,16 +202,28 @@ def main() -> None:
     case = ha_cases()[args.case]
     progress(args.progress_file, args.case, "Validating model endpoint and pinned fixture", "preparing")
     if not args.preflight_only:
-        if not args.base_url or not args.model:
-            parser.error("Model and base URL are required for a benchmark run.")
-        base = compatible_base(args.base_url)
-        if args.model not in served_models(base):
-            parser.error("Selected model is not served at that endpoint.")
+        if not args.model:
+            parser.error("Model is required for a benchmark run.")
+        if args.source == "openrouter":
+            if not os.environ.get("OPENROUTER_API_KEY"):
+                parser.error("OPENROUTER_API_KEY is missing.")
+            if args.cap_usd is None or not 0 < args.cap_usd <= 20:
+                parser.error("Confirm an active OpenRouter workspace cap between $0 and $20.")
+        else:
+            if not args.base_url:
+                parser.error("Base URL is required for a local benchmark run.")
+            base = compatible_base(args.base_url)
+            if args.model not in served_models(base):
+                parser.error("Selected model is not served at that endpoint.")
     for key in ("OPENROUTER_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "FREETOKEN_API_KEY", "COMPATIBLE_API_KEY"):
-        os.environ.pop(key, None)
+        if key != "OPENROUTER_API_KEY" or args.source != "openrouter":
+            os.environ.pop(key, None)
     if not args.preflight_only:
-        os.environ[f"{args.source.upper()}_BASE_URL"] = base
-        os.environ[f"{args.source.upper()}_API_KEY"] = "local-no-secret"
+        if args.source == "openrouter":
+            os.environ["OPENROUTER_BASE_URL"] = "https://openrouter.ai/api/v1"
+        else:
+            os.environ[f"{args.source.upper()}_BASE_URL"] = base
+            os.environ[f"{args.source.upper()}_API_KEY"] = "local-no-secret"
     clock_start = time.monotonic()
     setup_done: float | None = None
     eval_done: float | None = None

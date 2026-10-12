@@ -1,22 +1,46 @@
-"""Run the pinned local/private suite, recording durable progress for the web console."""
+"""Run the pinned suite, recording durable progress for the web console."""
 import argparse
 import json
+import os
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from inspect_ai.log import read_eval_log
+
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def case_score(kind: str, case_id: str, run_id: str) -> tuple[bool | None, int | None]:
+    directory = ROOT / 'artifacts/inspect' / ('selected' if kind == 'smoke' else 'ha') / run_id
+    samples = []
+    for path in directory.glob('*.eval'):
+        samples.extend(sample for sample in (read_eval_log(path).samples or []) if kind == 'smoke' or sample.id == case_id)
+    if len(samples) != (2 if kind == 'smoke' else 1):
+        return None, None
+    values = [score.value for sample in samples for score in (sample.scores or {}).values()]
+    if any(not sample.scores for sample in samples):
+        return None, None
+    passed = all(value in ('C', True, 1) for value in values)
+    calls = sum(event.event == 'model' for sample in samples for event in sample.events)
+    return passed, calls
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--source', choices=('freetoken', 'compatible'), required=True)
+    parser.add_argument('--source', choices=('freetoken', 'openrouter', 'compatible'), required=True)
     parser.add_argument('--model', required=True)
     parser.add_argument('--base-url', default='')
     parser.add_argument('--run-id', required=True)
     parser.add_argument('--progress-file', required=True)
+    parser.add_argument('--cap-usd', type=float)
     args = parser.parse_args()
+    if args.source == 'openrouter':
+        if not os.environ.get('OPENROUTER_API_KEY'):
+            parser.error('OPENROUTER_API_KEY is missing.')
+        if args.cap_usd is None or not 0 < args.cap_usd <= 20:
+            parser.error('Confirm an active OpenRouter workspace cap between $0 and $20.')
     cases = json.loads((ROOT / 'tasks/inspect-ha-cases.json').read_text())
     entries = [('smoke', 'Pinned smoke set', 'smoke')]
     entries.extend((row['id'], row['name'], 'ha') for row in cases)
@@ -42,8 +66,12 @@ def main() -> int:
                 command.extend(['--base-url', args.base_url])
         else:
             command = [sys.executable, str(ROOT / 'scripts/run-inspect-ha-pilot.py'), '--case', case_id,
-                       '--source', args.source, '--model', args.model, '--base-url', args.base_url,
+                       '--source', args.source, '--model', args.model,
                        '--run-id', args.run_id, '--progress-file', args.progress_file]
+            if args.base_url:
+                command.extend(['--base-url', args.base_url])
+        if args.source == 'openrouter':
+            command.extend(['--cap-usd', str(args.cap_usd)])
         try:
             result = subprocess.run(command, cwd=ROOT, check=False)
             return_code = result.returncode
@@ -52,8 +80,13 @@ def main() -> int:
         state = 'complete' if return_code == 0 else 'failed'
         if state == 'failed':
             failures += 1
-        completed.append({'caseId': case_id, 'status': state,
-                          'message': None if state == 'complete' else f'{name} could not complete (exit status {return_code}).'})
+        item = {'caseId': case_id, 'status': state,
+                'message': None if state == 'complete' else f'{name} could not complete (exit status {return_code}).'}
+        if state == 'complete':
+            passed, calls = case_score(kind, case_id, args.run_id)
+            if passed is not None:
+                item.update({'passed': passed, 'modelCalls': calls})
+        completed.append(item)
         update('running', None if len(completed) == len(entries) else entries[len(completed)][0],
                f'{len(completed)} of {len(entries)} cases finished')
     update('exporting', None, 'Exporting Inspect results')

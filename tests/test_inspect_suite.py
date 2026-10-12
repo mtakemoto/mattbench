@@ -66,16 +66,20 @@ class InspectSuiteTests(unittest.TestCase):
             self.assertEqual(final["completedCount"], final["totalCases"])
             self.assertEqual([item["status"] for item in final["completedCases"]], ["complete", "failed", "complete"])
 
-    def test_rejects_openrouter_before_launching_a_child(self):
-        argv = [
-            "run-inspect-suite.py", "--source", "openrouter", "--model", "example-model",
-            "--run-id", "20261011010203", "--progress-file", "/tmp/unused-progress.json",
-        ]
-        with patch.object(sys, "argv", argv), patch.object(suite.subprocess, "run") as run:
-            with self.assertRaises(SystemExit) as raised:
-                suite.main()
-        self.assertEqual(raised.exception.code, 2)
-        run.assert_not_called()
+    def test_openrouter_passes_cap_to_every_child_without_local_endpoint(self):
+        with tempfile.TemporaryDirectory() as temp:
+            argv = [
+                "run-inspect-suite.py", "--source", "openrouter", "--model", "z-ai/glm-5.3-flash",
+                "--cap-usd", "20", "--run-id", "20261011010203",
+                "--progress-file", str(Path(temp) / "progress.json"),
+            ]
+            with patch.object(sys, "argv", argv), patch.dict(suite.os.environ, {"OPENROUTER_API_KEY": "test-only"}), patch.object(suite.subprocess, "run", return_value=SimpleNamespace(returncode=0)) as run:
+                self.assertEqual(suite.main(), 0)
+            self.assertEqual(run.call_count, 1 + len(json.loads((ROOT / "tasks/inspect-ha-cases.json").read_text())))
+            for call in run.call_args_list:
+                command = call.args[0]
+                self.assertEqual(command[command.index("--cap-usd") + 1], "20.0")
+                self.assertNotIn("--base-url", command)
 
 
 if __name__ == "__main__":
