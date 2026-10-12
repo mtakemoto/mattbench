@@ -190,7 +190,7 @@ def ha_case(case_id: str = "mxz_coordinator_target") -> Task:
             id=case_id,
             input=case["prompt"],
             target=case["target"],
-            metadata={"category": "ha_chained", "fixture": case["fixture"], "prompt_variant": "base"},
+            metadata={"category": case["category"], "fixture": case["fixture"], "prompt_variant": "base"},
         )],
         solver=react(tools=[mcp_tools(server, tools=["ha_search", "ha_get_state", "ha_call_service"])]),
         scorer=synthetic_ha_state(case),

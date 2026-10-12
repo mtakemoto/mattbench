@@ -8,15 +8,15 @@ const jobFile = join(artifactDir, 'job.json');
 
 export type Source = 'freetoken' | 'openrouter' | 'compatible';
 export type ModelOption = { id: string; name: string; contextLength?: number; promptPrice?: string; completionPrice?: string };
-export type Case = { id: string; name: string; suite: 'smoke' | 'ha'; fixture: string; maxModelCalls?: number };
+export type Case = { id: string; name: string; category: string; suite: 'smoke' | 'ha'; fixture: string; maxModelCalls?: number };
 export type Job = { id: string; status: 'running' | 'complete' | 'failed' | 'interrupted'; source: Source; model: string; variant: string; caseId: string; startedAt: string; finishedAt?: string; error?: string; pid?: number; phase: 'validating' | 'preparing' | 'running' | 'billing' | 'exporting' | 'complete' | 'failed' | 'interrupted'; currentCaseId?: string; completedCases: { caseId: string; status: 'complete' | 'failed'; passed?: boolean; modelCalls?: number; message?: string }[]; completedCount: number; totalCases: number; message: string; updatedAt: string };
 
 export function cases(): Case[] {
-  const smoke = JSON.parse(readFileSync(join(root, 'tasks', 'smoke.json'), 'utf8')) as { id: string; name?: string }[];
-  const ha = JSON.parse(readFileSync(join(root, 'tasks', 'inspect-ha-cases.json'), 'utf8')) as { id: string; name: string; fixture: string; max_model_calls: number }[];
+  const smoke = JSON.parse(readFileSync(join(root, 'tasks', 'smoke.json'), 'utf8')) as { id: string; name?: string; category: string }[];
+  const ha = JSON.parse(readFileSync(join(root, 'tasks', 'inspect-ha-cases.json'), 'utf8')) as { id: string; name: string; category: string; fixture: string; max_model_calls: number }[];
   return [
-    ...smoke.map((entry) => ({ id: entry.id, name: entry.name || entry.id.replaceAll('_', ' '), suite: 'smoke' as const, fixture: 'tasks/smoke.json' })),
-    ...ha.map((entry) => ({ id: entry.id, name: entry.name, suite: 'ha' as const, fixture: entry.fixture, maxModelCalls: entry.max_model_calls }))
+    ...smoke.map((entry) => ({ id: entry.id, name: entry.name || entry.id.replaceAll('_', ' '), category: entry.category, suite: 'smoke' as const, fixture: 'tasks/smoke.json' })),
+    ...ha.map((entry) => ({ id: entry.id, name: entry.name, category: entry.category, suite: 'ha' as const, fixture: entry.fixture, maxModelCalls: entry.max_model_calls }))
   ];
 }
 

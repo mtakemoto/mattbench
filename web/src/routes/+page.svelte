@@ -8,7 +8,7 @@
   type Model = { id: string; name: string; contextLength?: number };
   type RunTiming = { setup_seconds?: number; evaluation_seconds?: number; teardown_seconds?: number; total_wall_seconds?: number };
   type Row = { task: string; run_id: string; launcher_run_id?: string; sample_id: string; prompt_variant: string; model: string; concrete_response_model?: string; routed_models?: string[]; providers?: string[]; passed: boolean | null; score_explanation?: string; score_metadata?: Record<string, { state_correct?: boolean; trace_valid?: boolean }>; latency_seconds?: number; model_calls?: number; usage?: Record<string, { total_tokens?: number; total_cost?: number | null }>; started_at?: string; inference?: { temperature?: number; max_tokens?: number; max_retries?: number; timeout?: number }; inspect_version?: string; task_version?: string; fixture?: string; log_file?: string; run_timing?: RunTiming };
-  type BenchmarkCase = { id: string; name: string; suite: 'smoke' | 'ha'; fixture: string; maxModelCalls?: number };
+  type BenchmarkCase = { id: string; name: string; category: string; suite: 'smoke' | 'ha'; fixture: string; maxModelCalls?: number };
   type CaseTiming = { case_id: string; status: string; setup_seconds: number; evaluation_seconds: number; teardown_seconds: number; total_wall_seconds: number };
   type Job = { id: string; status: 'running' | 'complete' | 'failed' | 'interrupted'; phase?: string; source: Source; model: string; caseId?: string; currentCaseId?: string; completedCases?: { caseId: string; status: string; passed?: boolean; modelCalls?: number; message?: string }[]; completedCount?: number; totalCases?: number; message?: string; error?: string };
   let { data }: PageProps = $props();
@@ -38,6 +38,13 @@
   let catalogRequest = 0;
   const sourceNames: Record<Source, string> = { freetoken: 'FreeToken', openrouter: 'OpenRouter', compatible: 'Other endpoint' };
   let availableCases = $derived(data.cases as BenchmarkCase[]);
+  let caseGroups = $derived.by(() => {
+    const groups: Record<string, BenchmarkCase[]> = Object.create(null) as Record<string, BenchmarkCase[]>;
+    for (const entry of availableCases.filter((item) => item.suite === 'ha')) {
+      groups[entry.category] = [...(groups[entry.category] || []), entry];
+    }
+    return Object.entries(groups).map(([id, entries]) => ({ id, label: id === 'smart_home' ? 'Smart home' : id.replaceAll('_', ' '), entries }));
+  });
   let visibleCases = $derived(caseId === 'all' ? availableCases : availableCases.filter((entry) => entry.suite === (caseId === 'smoke' ? 'smoke' : 'ha') && (caseId === 'smoke' || entry.id === caseId)));
   let caseTiming = $derived(timings.find((entry) => entry.case_id === caseId));
   let totalCallCap = $derived(availableCases.filter((entry) => entry.suite === 'ha').reduce((sum, entry) => sum + (entry.maxModelCalls || 0), 2));
@@ -155,9 +162,9 @@
       <section class="run-panel" class:view-hidden={activeView !== 'run'} id="run" aria-labelledby="run-title">
         <div class="section-head"><div><h2 id="run-title">Set up a run<span>.</span></h2></div><b>{visibleCases.length} {visibleCases.length === 1 ? 'TASK' : 'TASKS'}</b></div>
         <div class="field case-field"><div class="field-head"><strong>Choose a benchmark</strong><span>Pinned cases · {availableCases.length} total</span></div><div class="case-options" role="group" aria-label="Benchmark selection">
-          <button class="case-option everything" class:selected={caseId === 'all'} type="button" aria-pressed={caseId === 'all'} onclick={() => caseId = 'all'}><span><strong>Run everything</strong><small>Smoke questions and every Home Assistant case</small></span><b>{availableCases.length} TASKS</b></button>
+          <button class="case-option everything" class:selected={caseId === 'all'} type="button" aria-pressed={caseId === 'all'} onclick={() => caseId = 'all'}><span><strong>Run everything</strong><small>Smoke questions and every smart home case</small></span><b>{availableCases.length} TASKS</b></button>
           <button class="case-option" class:selected={caseId === 'smoke'} type="button" aria-pressed={caseId === 'smoke'} onclick={() => caseId = 'smoke'}><span><strong>Smoke questions</strong><small>{availableCases.filter((entry) => entry.suite === 'smoke').length} quick reasoning checks</small></span><b>SMOKE</b></button>
-          {#each availableCases.filter((entry) => entry.suite === 'ha') as entry (entry.id)}<button class="case-option" class:selected={caseId === entry.id} type="button" aria-pressed={caseId === entry.id} onclick={() => caseId = entry.id}><span><strong>{entry.name}</strong><small>Real ha-mcp · fresh synthetic home</small></span><b>HOME ASSISTANT</b></button>{/each}
+          {#each caseGroups as group (group.id)}<div class="case-category"><strong>{group.label}</strong><span>{group.entries.length} {group.entries.length === 1 ? 'case' : 'cases'}</span></div>{#each group.entries as entry (entry.id)}<button class="case-option" class:selected={caseId === entry.id} type="button" aria-pressed={caseId === entry.id} onclick={() => caseId = entry.id}><span><strong>{entry.name}</strong><small>Real ha-mcp · fresh synthetic home</small></span><b>{group.label.toUpperCase()}</b></button>{/each}{/each}
         </div>{#if caseId !== 'smoke'}<p class="case-hint">Each Home Assistant task starts with fresh synthetic state and real ha-mcp. All model sources are available.</p>{/if}{#if caseId !== 'all' && caseId !== 'smoke' && caseTiming}<p class="case-timing">Latest {caseTiming.status.replaceAll('_', ' ')} · setup {secs(caseTiming.setup_seconds)} · cleanup {secs(caseTiming.teardown_seconds)} · total {secs(caseTiming.total_wall_seconds)}</p>{/if}</div>
         <div class="field"><div class="field-head"><strong>Model source</strong><span>Choose where requests go</span></div><div class="source-grid" role="group" aria-label="Model source">
           {#each ['freetoken', 'openrouter', 'compatible'] as option (option)}<button type="button" class:selected={source === option} aria-pressed={source === option} onclick={() => chooseSource(option as Source)}><span class="symbol" aria-hidden="true">{#if option === 'freetoken'}<Radio size={22}/>{:else if option === 'openrouter'}<ArrowUpRight size={22}/>{:else}<Network size={22}/>{/if}</span><strong>{sourceNames[option as Source]}</strong><small>{option === 'freetoken' ? 'This machine' : option === 'openrouter' ? 'Hosted' : 'Private / LAN'}</small></button>{/each}
