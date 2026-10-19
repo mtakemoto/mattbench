@@ -134,8 +134,11 @@
     if (!response.ok) throw new Error(`Job status returned HTTP ${response.status}.`);
     const body = parseOverview(await response.json());
     if (signal.aborted) return;
+    const finished = job?.status === 'running' && body.job?.status !== 'running';
     if (generation === jobGeneration) observedJob = body.job;
-    if (activeView !== 'run' && loadedRevision !== body.revision) await loadHistory(signal);
+    // History is fetched lazily, but once it is shown (or a run just finished) it stays current.
+    const wanted = activeView !== 'run' || Boolean(loadedRevision) || finished;
+    if (wanted && loadedRevision !== body.revision) await loadHistory(signal);
   }
   async function run() {
     runError = '';
