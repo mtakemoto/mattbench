@@ -153,6 +153,14 @@ class WorkerCommandTests(unittest.TestCase):
 
 
 class LiveStatusTests(unittest.TestCase):
+    def test_started_job_lists_every_queued_case(self):
+        plan = build_plan([FIRST_SUITE])
+        with tempfile.TemporaryDirectory() as temporary, patch.object(worker.subprocess, "Popen") as popen:
+            popen.return_value.pid = os.getpid()
+            job = worker.start_job({"source": "compatible", "model": "offline", "selection": [FIRST_SUITE],
+                                    "baseUrl": "http://127.0.0.1:9/v1", "maxCalls": plan.max_calls}, Path(temporary))
+        self.assertEqual([case["state"] for case in job["cases"]], ["queued"] * len(plan.cases))
+
     def write_running_job(self, directory, plan):
         job = job_record()
         worker.atomic_json(directory / "job.json", job)

@@ -1,15 +1,16 @@
 <script lang="ts">
   import { Info } from '@lucide/svelte';
-  import type { BenchmarkCase } from './contracts';
+  import type { BenchmarkCase, Suite } from './contracts';
   import { matrixRuns, type RecordedRun } from './results';
-  import { formatNumber, formatSeconds, shortModelName, SOURCE_LABELS, sourceOf } from './format';
+  import { coverageNamer, formatNumber, formatSeconds, shortModelName, SOURCE_LABELS, sourceOf } from './format';
   import RunPicker from './RunPicker.svelte';
   import RunDetail from './RunDetail.svelte';
 
   /** `onDemand`: history is not fetched until the Results view opens. */
-  let { runs, cases, loaded, onDemand, failed }: {
-    runs: RecordedRun[]; cases: BenchmarkCase[]; loaded: boolean; onDemand: boolean; failed: boolean;
-  } = $props();
+  let { runs, suites, loaded, failed }: { runs: RecordedRun[]; suites: Suite[]; loaded: boolean; failed: boolean } = $props();
+  let cases = $derived<BenchmarkCase[]>(suites.flatMap((suite) => suite.cases));
+  let coverage = $derived(coverageNamer(suites));
+  let includePilots = $state(false);
   type Filter = 'all' | 'local' | 'hosted';
   const filters: { id: Filter; label: string }[] = [{ id: 'all', label: 'All' }, { id: 'local', label: 'Local' }, { id: 'hosted', label: 'Hosted' }];
   let filter = $state<Filter>('all');
@@ -21,7 +22,7 @@
     const hosted = sourceOf(run.model) === 'openrouter';
     return filter === 'all' || (filter === 'hosted') === hosted;
   }
-  let visibleRuns = $derived(runs.filter((run) => run.rows.some((row) => caseIds.has(row.sample_id)) && matchesFilter(run)));
+  let visibleRuns = $derived(runs.filter((run) => (includePilots || run.launched) && run.rows.some((row) => caseIds.has(row.sample_id)) && matchesFilter(run)));
   let selectedRun = $derived(visibleRuns.find((run) => run.key === selectedRunKey) || visibleRuns[0]);
   let matrix = $derived(matrixRuns((selectedRun?.rows || []).filter((row) => caseIds.has(row.sample_id))));
   let detail = $derived(matrix.find((entry) => entry.key === detailKey));
@@ -35,8 +36,9 @@
     {#each filters as option (option.id)}<button class:selected={filter === option.id} onclick={() => filter = option.id}>{option.label}</button>{/each}
   </div>
 </div>
+<label class="pilot-toggle"><input type="checkbox" bind:checked={includePilots} /> Include pilot runs made outside the console</label>
 {#if selectedRun}
-  <RunPicker id="report-run" runs={visibleRuns} selected={selectedRun} onselect={(key) => { selectedRunKey = key; detailKey = ''; }} />
+  <RunPicker id="report-run" runs={visibleRuns} selected={selectedRun} {coverage} onselect={(key) => { selectedRunKey = key; detailKey = ''; }} />
 {/if}
 {#if matrix.length}
   <div class="matrix-wrap"><table>
@@ -61,11 +63,13 @@
     </tbody>
   </table></div>
 {:else if !loaded}
-  <div class="empty">
-    <strong>{onDemand ? 'Results load on demand.' : failed ? 'Results could not be loaded.' : 'Loading result history…'}</strong>
-    {#if onDemand}<p><a href="#report">Open Results</a> to read local run history.</p>{/if}
-  </div>
+  <div class="empty"><strong>{failed ? 'Results could not be loaded.' : 'Loading result history…'}</strong></div>
 {:else}
   <div class="empty"><div aria-hidden="true">×</div><strong>No runs in this view yet.</strong><p>Choose another source filter, or run a pinned benchmark to see its task results here.</p></div>
 {/if}
 {#if detail}<RunDetail run={detail} {cases} onclose={() => detailKey = ''} />{/if}
+
+<style>
+  .pilot-toggle { display: flex; align-items: center; gap: 7px; margin: -4px 0 14px; font-size: 11px; color: #596b5c; }
+  .pilot-toggle input { accent-color: #366e37; }
+</style>

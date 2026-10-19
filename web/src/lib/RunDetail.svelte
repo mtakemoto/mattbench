@@ -26,7 +26,7 @@
     {#each cases as benchmark (benchmark.id)}
       {@const result = run.cases[benchmark.id]}
       {#if result}
-        <div>
+        <div class:failed={result.passed === false}>
           <span>{benchmark.name}</span>
           <b class:pass={result.passed === true} class:miss={result.passed === false}>{outcomeLabel(result.passed)}</b>
           <small>{notes(result)}</small>
@@ -52,3 +52,8 @@
   </dl>
 </div>
 <BillingStatus rows={Object.values(run.cases)} />
+
+<style>
+  .failed { background: #f4d6cd; border-radius: 7px; padding-left: 10px !important; padding-right: 10px; border-top-color: #e3b3a5 !important; color: #5c1f14; }
+  .failed small { color: #7a3326 !important; }
+</style>

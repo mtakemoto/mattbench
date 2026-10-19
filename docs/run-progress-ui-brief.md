@@ -1,6 +1,6 @@
 # Live run progress: design brief
 
-**Status:** Planned, not built. Shaped on 2026-10-19. The owner chose **strip + expandable grid** and **live outcomes**.
+**Status:** Built on 2026-10-19 (`CaseGrid`, `CaseMark`, `LiveRun`, `CurrentRun`, `scripts/case_progress.py`). The owner chose **strip + expandable grid** and **live outcomes**. Changes made after the brief: on the Run view, the right side is a live **current run** panel (no history picker), so the strip shows only on Results and Activity. Failed cases have a red background. Cancelled cases show as *not run* and never count as finished.
 
 ## Job and audience
 

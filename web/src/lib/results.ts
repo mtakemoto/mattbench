@@ -1,6 +1,7 @@
 import type { Row } from './contracts';
 
-export type RecordedRun = { key: string; rows: Row[]; model: string; runId: string; startedAt: string; pass: number; scored: number; unscored: number; prompts: string };
+/** `launched`: started by the console worker; ad hoc pilot logs have no launcher run ID. */
+export type RecordedRun = { key: string; rows: Row[]; model: string; runId: string; startedAt: string; pass: number; scored: number; unscored: number; prompts: string; launched: boolean };
 export type MatrixRun = { key: string; runId: string; model: string; prompt: string; cases: Record<string, Row>; pass: number; scored: number; time: number; setup: number; cleanup: number; calls: number | null; tokens: number; cost: number | null; providers: string[]; routedModels: string[]; sample: Row };
 
 export function tokens(row: Row): number {
@@ -24,7 +25,8 @@ export function groupRuns(rows: Row[]): RecordedRun[] {
       key, rows: ordered, model: ordered[0].model, runId: ordered[0].launcher_run_id || ordered[0].run_id,
       startedAt: ordered[0].started_at || '', pass: ordered.filter((row) => row.passed === true).length,
       scored: ordered.filter((row) => row.passed !== null).length, unscored: ordered.filter((row) => row.passed === null).length,
-      prompts: [...new Set(ordered.map((row) => row.prompt_variant))].join(' + ')
+      prompts: [...new Set(ordered.map((row) => row.prompt_variant))].join(' + '),
+      launched: Boolean(ordered[0].launcher_run_id)
     };
   }).sort((a, b) => b.startedAt.localeCompare(a.startedAt));
 }

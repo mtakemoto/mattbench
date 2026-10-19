@@ -3,13 +3,16 @@
   import { ArrowUpRight, ChartNoAxesCombined, Clock3, Radio, Network, Search, ArrowRight } from '@lucide/svelte';
   import type { PageProps } from './$types';
   import { parseHistory, parseJob, parseOverview, SELECT_ALL, SOURCES, type Job, type ModelOption, type Row, type Source } from '../lib/contracts';
-  import { SOURCE_LABELS, taskNamer } from '../lib/format';
+  import { coverageNamer, SOURCE_LABELS, taskNamer } from '../lib/format';
+  import { buildNotices } from '../lib/notices';
+  import { runProgress } from '../lib/progress';
   import { groupRuns } from '../lib/results';
   import { startPolling } from '../lib/polling';
   import ActivityLog from '../lib/ActivityLog.svelte';
-  import ConsoleStatus from '../lib/ConsoleStatus.svelte';
+  import CurrentRun from '../lib/CurrentRun.svelte';
   import JobStatus from '../lib/JobStatus.svelte';
   import LiveRun from '../lib/LiveRun.svelte';
+  import NotificationCenter from '../lib/NotificationCenter.svelte';
   import PaidGuard from '../lib/PaidGuard.svelte';
   import PromptPicker from '../lib/PromptPicker.svelte';
   import Scorecard from '../lib/Scorecard.svelte';
@@ -42,6 +45,7 @@
   let loading = $state(false);
   let catalogError = $state('');
   let runError = $state('');
+  let cancelling = $state(false);
   let capUsd = $state(20);
   let capConfirmed = $state(false);
   let selection = $state<string[]>([SELECT_ALL]);
@@ -67,9 +71,9 @@
   let canRun = $derived(Boolean(selectedModel) && maxCalls > 0 && !loading && job?.status !== 'running' && openrouterAllowed);
 
   let runs = $derived(groupRuns(rows));
-  let caseIds = $derived(new Set(allCases.map((entry) => entry.id)));
-  let jobResults = $derived(rows.filter((row) => row.launcher_run_id === job?.id && caseIds.has(row.sample_id)));
-  let jobPassed = $derived(jobResults.filter((row) => row.passed === true).length);
+  let coverage = $derived(coverageNamer(suites));
+  let progress = $derived(job ? runProgress(job, suites) : null);
+  let notices = $derived(buildNotices(connectionError, historyError, warnings, progress?.warnings ?? []));
 
   function catalogFailure(reason: string): string {
     if (reason !== 'fetch failed') return reason;
@@ -134,11 +138,9 @@
     if (!response.ok) throw new Error(`Job status returned HTTP ${response.status}.`);
     const body = parseOverview(await response.json());
     if (signal.aborted) return;
-    const finished = job?.status === 'running' && body.job?.status !== 'running';
     if (generation === jobGeneration) observedJob = body.job;
-    // History is fetched lazily, but once it is shown (or a run just finished) it stays current.
-    const wanted = activeView !== 'run' || Boolean(loadedRevision) || finished;
-    if (wanted && loadedRevision !== body.revision) await loadHistory(signal);
+    // The summary is small and the revision check skips unchanged polls, so every view stays current.
+    if (loadedRevision !== body.revision) await loadHistory(signal);
   }
   async function run() {
     runError = '';
@@ -160,6 +162,20 @@
       polling?.wake();
     } catch (cause) {
       runError = cause instanceof Error ? cause.message : 'Could not start run.';
+    }
+  }
+  async function cancel() {
+    cancelling = true;
+    try {
+      const response = await fetch('/api/runs', { method: 'DELETE' });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || 'Could not cancel the run.');
+      observedJob = parseJob(body.job);
+    } catch (cause) {
+      runError = cause instanceof Error ? cause.message : 'Could not cancel the run.';
+    } finally {
+      cancelling = false;
+      polling?.wake();
     }
   }
   onMount(() => {
@@ -199,10 +215,10 @@
         <span><strong>{allCases.length}</strong> pinned cases</span>
         <span><strong>{loadedRevision ? runs.length : '—'}</strong> {loadedRevision ? 'recorded runs' : 'history on demand'}</span>
         <span>Inspect AI</span>
+        <NotificationCenter {notices} />
       </div>
     </header>
-    <ConsoleStatus {connectionError} {historyError} {warnings} />
-    {#if job?.status === 'running'}<LiveRun {job} {taskName} />{/if}
+    {#if job?.status === 'running' && progress && activeView !== 'run'}<LiveRun {job} {progress} />{/if}
     <div class:single={activeView !== 'run'} class="workspace">
       <section class="run-panel" class:view-hidden={activeView !== 'run'} id="run" aria-labelledby="run-title">
         <div class="section-head"><div><h2 id="run-title">Set up a run<span>.</span></h2></div><b>{selectedCases.length} {selectedCases.length === 1 ? 'TASK' : 'TASKS'}</b></div>
@@ -256,13 +272,16 @@
           </button>
         </div>
         {#if runError}<div class="message error" role="alert">{runError}</div>{/if}
-        {#if job}<JobStatus {job} resultsCount={jobResults.length} passedCount={jobPassed} {taskName} refresh={() => polling?.wake()} />{/if}
+        {#if job && progress}<JobStatus {job} {progress} oncancel={cancel} {cancelling} />{/if}
       </section>
-      <section class="report-panel" id="report" aria-labelledby="report-title">
-        <div class:hidden-view={activeView === 'activity'}>
-          <Scorecard {runs} cases={allCases} loaded={Boolean(loadedRevision)} onDemand={activeView === 'run'} failed={Boolean(historyError)} />
-        </div>
-        <div class="activity" class:hidden-view={activeView !== 'activity'} id="activity"><ActivityLog {runs} {taskName} /></div>
+      <section class="report-panel" aria-labelledby={activeView === 'run' ? 'current-title' : 'report-title'}>
+        {#if activeView === 'run'}
+          <CurrentRun {job} {progress} {rows} />
+        {:else if activeView === 'results'}
+          <div id="report"><Scorecard {runs} {suites} loaded={Boolean(loadedRevision)} failed={Boolean(historyError)} /></div>
+        {:else}
+          <div class="activity" id="activity"><ActivityLog {runs} {taskName} {coverage} /></div>
+        {/if}
       </section>
     </div>
     <footer><span>mattbench / personal evaluation lab</span><span>Fixtures and scores stay pinned. Raw traces stay local.</span></footer>

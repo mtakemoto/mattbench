@@ -1,4 +1,4 @@
-import { SOURCES, type CaseResult, type Source, type Suite } from './contracts';
+import { SOURCES, type Source, type Suite } from './contracts';
 
 export const SOURCE_LABELS: Record<Source, string> = { freetoken: 'FreeToken', openrouter: 'OpenRouter', compatible: 'Other endpoint' };
 
@@ -28,13 +28,19 @@ export function formatRunTime(value: string): string {
 export function outcomeLabel(passed: boolean | null | undefined): 'PASS' | 'FAIL' | 'UNSCORED' {
   return passed === true ? 'PASS' : passed === false ? 'FAIL' : 'UNSCORED';
 }
-/** Outcome of one finished job entry; ERROR means the evaluator itself failed, not the model. */
-export function caseResultLabel(result: CaseResult): 'ERROR' | 'PASS' | 'FAIL' | 'DONE' {
-  return result.status === 'failed' ? 'ERROR' : result.passed === true ? 'PASS' : result.passed === false ? 'FAIL' : 'DONE';
-}
 /** `plural(3, 'category', 'categories')`; the plural form defaults to singular + 's'. */
 export function plural(count: number, singular: string, pluralForm = `${singular}s`): string {
   return `${count} ${count === 1 ? singular : pluralForm}`;
+}
+
+/** "17 cases · Smoke questions, Smart home" — what a recorded run covered, from its sample IDs. */
+export function coverageNamer(suites: Suite[]): (sampleIds: string[]) => string {
+  const suiteOf = new Map(suites.flatMap((suite) => suite.cases.map((entry) => [entry.id, suite] as const)));
+  return (sampleIds) => {
+    const covered = suites.filter((suite) => sampleIds.some((id) => suiteOf.get(id) === suite));
+    const names = covered.length === suites.length ? 'all categories' : covered.map((suite) => suite.label).join(', ');
+    return `${plural(sampleIds.length, 'case')} · ${names || 'pilot tasks'}`;
+  };
 }
 
 /** Display names for suite IDs and case IDs, which share one progress namespace. */

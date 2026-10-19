@@ -130,7 +130,7 @@ def start_job(payload: dict, directory: Path) -> dict:
                                      pass_fds=(lock.fileno(), ready_read), start_new_session=True)
         job = update_job(directory, job_id, pid=child.pid)
         os.write(ready_write, b"1")
-        return job
+        return {**job, "cases": job_cases(directory, job)}
     except BaseException:
         if child:
             child.terminate()

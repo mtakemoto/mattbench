@@ -18,5 +18,5 @@
 {/each}
 
 <style>
-  .billing-note { border-left: 2px solid currentColor; margin: .75rem 0; padding: .5rem .75rem; font-size: .8125rem; line-height: 1.5; }
+  .billing-note { margin: .75rem 0; padding: .6rem .8rem; border-radius: 7px; background: #fbfaf2; border: 1px solid #d0d5c4; color: #40543d; font-size: 11px; line-height: 1.5; }
 </style>

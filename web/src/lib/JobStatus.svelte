@@ -1,35 +1,39 @@
 <script lang="ts">
+  import { Square } from '@lucide/svelte';
   import type { Job } from './contracts';
-  import { caseResultLabel } from './format';
-  let { job, resultsCount, passedCount, taskName, refresh }: {
-    job: Job; resultsCount: number; passedCount: number;
-    taskName: (id: string) => string; refresh: () => void;
+  import type { RunProgress } from './progress';
+
+  /** Compact job card under the Run button: what is happening, case progress, and Cancel. */
+  let { job, progress, oncancel, cancelling }: {
+    job: Job; progress: RunProgress; oncancel: () => void; cancelling: boolean;
   } = $props();
-  let phase = $derived(job.phase.replaceAll('_', ' '));
-  let progress = $derived(job.totalCases ? Math.round(job.completedCount / job.totalCases * 100) : 0);
+  let running = $derived(job.status === 'running');
+  let headline = $derived(running ? `Running · ${progress.done} of ${progress.total} cases`
+    : job.status === 'complete' ? `Run finished · ${progress.passed} of ${progress.total} passed`
+    : job.status === 'interrupted' ? `Run stopped · ${progress.done} of ${progress.total} cases finished`
+    : 'Run failed');
 </script>
 
-<div class:working={job.status === 'running'} class="job" role="status" aria-live="polite">
+<div class:working={running} class="job" role="status" aria-live="polite">
   <i></i>
   <span>
-    <strong>
-      {job.status === 'running' ? `Run ${phase}` : job.status === 'complete' ? resultsCount ? `Run finished · ${passedCount}/${resultsCount} passed` : 'Run finished' : job.status === 'interrupted' ? 'Run interrupted' : 'Run stopped'}
-    </strong>
-    <small>{job.currentCaseId ? `${taskName(job.currentCaseId)} · ` : ''}{job.message || job.error}</small>
-    {#if job.totalCases}
-      <span class="progress-track" role="progressbar" aria-label="Benchmark progress" aria-valuemin="0" aria-valuemax={job.totalCases} aria-valuenow={job.completedCount}>
-        <i style:transform={`scaleX(${progress / 100})`}></i>
-      </span>
-    {/if}
-    {#if job.completedCases.length}
-      <span class="case-status-list">
-        {#each job.completedCases as done (done.caseId)}
-          <span class:failed={done.status === 'failed' || done.passed === false}>
-            {caseResultLabel(done)} · {taskName(done.caseId)}{done.modelCalls !== undefined ? ` · ${done.modelCalls} calls` : ''}
-          </span>
-        {/each}
+    <strong>{headline}</strong>
+    <small>{job.message || job.error}</small>
+    {#if progress.total}
+      <span class="progress-track" role="progressbar" aria-label="Finished cases" aria-valuemin="0" aria-valuemax={progress.total} aria-valuenow={progress.done}>
+        <i style:transform={`scaleX(${progress.done / progress.total})`}></i>
       </span>
     {/if}
   </span>
-  {#if job.status !== 'running'}<button type="button" onclick={refresh}>Refresh</button>{/if}
+  {#if running}
+    <button class="cancel" type="button" onclick={oncancel} disabled={cancelling || job.phase === 'billing' || job.phase === 'exporting'}>
+      <Square size={11} aria-hidden="true" />{cancelling ? 'Cancelling…' : 'Cancel run'}
+    </button>
+  {/if}
 </div>
+
+<style>
+  .cancel { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #ba553e; background: #51312d; color: #ffc1ad; border-radius: 7px; padding: 7px 10px; font-size: 11px; font-weight: 800; white-space: nowrap; text-decoration: none; }
+  .cancel:hover:not(:disabled) { background: #6a3a33; }
+  .cancel:disabled { opacity: .55; }
+</style>

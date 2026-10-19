@@ -20,12 +20,17 @@ export type Row = {
   started_at?: string; inference?: { temperature?: number; max_tokens?: number; max_retries?: number; timeout?: number };
   inspect_version?: string | null; task_version?: string | number; fixture?: string; log_file?: string; run_timing?: RunTiming | null;
 };
-export type CaseResult = { caseId: string; status: 'complete' | 'failed'; passed?: boolean | null; modelCalls?: number; message?: string | null };
+/** One child process of a run (a whole suite, or one isolated case); never shown as a count. */
+export type EntryResult = { entryId: string; status: 'complete' | 'failed'; passed?: boolean | null; modelCalls?: number; message?: string | null };
+export const CASE_STATES = ['queued', 'running', 'pass', 'fail', 'unscored', 'error', 'not_run'] as const;
+export type CaseState = (typeof CASE_STATES)[number];
+/** Live state of one case under one prompt variant, from scripts/benchmark-worker.py --status. */
+export type JobCase = { id: string; suite: string; variant: string; state: CaseState; truncated?: boolean; calls?: number; explanation?: string | null };
 export type Job = {
   id: string; status: 'running' | 'complete' | 'failed' | 'interrupted'; source: Source; model: string;
   variants: string[]; selection: string[]; startedAt: string; updatedAt: string; finishedAt?: string; pid?: number | null;
   phase: 'validating' | 'preparing' | 'running' | 'billing' | 'exporting' | 'complete' | 'failed' | 'interrupted';
-  currentCaseId?: string | null; completedCases: CaseResult[]; completedCount: number; totalCases: number; message: string; error?: string;
+  currentEntryId?: string | null; completedEntries: EntryResult[]; totalEntries: number; cases: JobCase[]; message: string; error?: string;
 };
 export type RunInput = { source: Source; model: string; variants: string[]; selection: string[]; baseUrl?: string; maxCalls: number; capUsd?: number; capConfirmed?: boolean };
 export type History = { revision: string; rows: Row[]; warnings: string[] };
@@ -47,13 +52,18 @@ export function parseJob(value: unknown): Job | null {
   if (!/^\d{14,20}$/.test(String(job.id)) || !isSource(job.source) || !stringList(job.variants) || !stringList(job.selection) ||
       !['running', 'complete', 'failed', 'interrupted'].includes(String(job.status)) ||
       !['validating', 'preparing', 'running', 'billing', 'exporting', 'complete', 'failed', 'interrupted'].includes(String(job.phase)) ||
-      !Number.isInteger(job.completedCount) || !Number.isInteger(job.totalCases) || Number(job.completedCount) < 0 || Number(job.totalCases) < Number(job.completedCount) ||
-      (job.pid != null && (!Number.isInteger(job.pid) || Number(job.pid) <= 0)) || !Array.isArray(job.completedCases)) throw new Error('Invalid persisted job contract.');
-  for (const entry of job.completedCases) {
-    const result = object(entry, 'Case result');
-    if (typeof result.caseId !== 'string' || !['complete', 'failed'].includes(String(result.status)) ||
+      !Number.isInteger(job.totalEntries) || !Array.isArray(job.completedEntries) || !Array.isArray(job.cases) ||
+      (job.pid != null && (!Number.isInteger(job.pid) || Number(job.pid) <= 0))) throw new Error('Invalid persisted job contract.');
+  for (const entry of job.cases) {
+    const item = object(entry, 'Job case');
+    strings(item, ['id', 'suite', 'variant'], 'Job case');
+    if (!CASE_STATES.includes(item.state as CaseState) || (item.calls != null && !nonnegative(item.calls))) throw new Error('Invalid job case contract.');
+  }
+  for (const entry of job.completedEntries) {
+    const result = object(entry, 'Entry result');
+    if (typeof result.entryId !== 'string' || !['complete', 'failed'].includes(String(result.status)) ||
         (result.passed != null && typeof result.passed !== 'boolean') ||
-        (result.modelCalls != null && !nonnegative(result.modelCalls))) throw new Error('Invalid case result contract.');
+        (result.modelCalls != null && !nonnegative(result.modelCalls))) throw new Error('Invalid entry result contract.');
   }
   return job as unknown as Job;
 }

@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { models, startJob } from '../../../lib/server/bench';
+import { cancelJob, models, startJob } from '../../../lib/server/bench';
 import { isSource } from '../../../lib/contracts';
 
 export async function POST({ request, url }: { request: Request; url: URL }) {
@@ -19,5 +19,15 @@ export async function POST({ request, url }: { request: Request; url: URL }) {
     return json({ job }, { status: 202 });
   } catch (cause) {
     return json({ error: cause instanceof Error ? cause.message : 'Could not start the run.' }, { status: 400 });
+  }
+}
+
+/** Cancel the running benchmark; same-origin only, like starting one. */
+export function DELETE({ request, url }: { request: Request; url: URL }) {
+  if (request.headers.get('origin') !== url.origin) return json({ error: 'Use the local app to cancel a run.' }, { status: 403 });
+  try {
+    return json({ job: cancelJob() });
+  } catch (cause) {
+    return json({ error: cause instanceof Error ? cause.message : 'Could not cancel the run.' }, { status: 409 });
   }
 }

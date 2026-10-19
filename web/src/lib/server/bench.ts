@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { object, parseJob, type Job, type ModelOption, type RunInput, type Source } from '../contracts';
 import { artifactDir, endpoint, launch, pythonJson } from './config';
@@ -30,29 +30,18 @@ export async function models(source: Source, customBase = '', query = ''): Promi
   return options;
 }
 
+/** The job with live per-case progress; Python merges orchestrator and hook records. */
 export function currentJob(): Job | null {
-  const jobFile = join(artifactDir, 'job.json');
-  if (!existsSync(jobFile)) return null;
-  let job = parseJob(pythonJson('benchmark-worker.py', ['--status']));
-  if (!job || job.status !== 'running') return job;
-  // Progress may refine evaluation only; it can never overwrite billing/export or identity.
-  if (['preparing', 'running'].includes(job.phase)) {
-    const progressFile = join(artifactDir, `${job.id}.progress.json`);
-    if (existsSync(progressFile)) {
-      try {
-        const progress = object(JSON.parse(readFileSync(progressFile, 'utf8')), 'Progress');
-        const merged = { ...job };
-        for (const field of ['currentCaseId', 'completedCases', 'completedCount', 'totalCases', 'message']) {
-          if (field in progress) Object.assign(merged, { [field]: progress[field] });
-        }
-        job = parseJob(merged);
-      } catch { /* Preserve durable state on a damaged progress artifact. */ }
-    }
-  }
-  return job;
+  if (!existsSync(join(artifactDir, 'job.json'))) return null;
+  return parseJob(pythonJson('benchmark-worker.py', ['--status']));
 }
 
 export function startJob(input: RunInput): Job {
   // Python owns validation, frozen plan, atomic job writes and the single-run OS lock.
   return launch(input);
+}
+
+/** Ask the worker to stop; it keeps finished cases and still publishes results. */
+export function cancelJob(): Job | null {
+  return parseJob(pythonJson('benchmark-worker.py', ['--cancel']));
 }
