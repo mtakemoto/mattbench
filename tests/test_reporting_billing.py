@@ -65,6 +65,22 @@ class BillingTests(unittest.TestCase):
             payload = json.loads((root / 'artifacts/inspect/openrouter-billing/20261011010203.json').read_text())
             return result, payload
 
+    def test_every_suite_directory_is_billed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            logs = {}
+            for index, suite in enumerate(('selected', 'laptops')):
+                path = root / 'artifacts/inspect' / suite / '20261011010203' / f'{index}.eval'
+                path.parent.mkdir(parents=True)
+                path.write_text('fixture')
+                logs[path] = fake_log(f'eval-{index}', f'sample-{index}', [f'gen-{index}'])
+            argv = ['openrouter-billing.py', '--run-id', '20261011010203']
+            lookup = lambda gen_id, _key: {'cost_usd': 0.1, 'provider': 'p', 'model': 'm'}
+            with patch.object(billing, 'ROOT', root), patch.object(billing, 'read_eval_log', side_effect=lambda path: logs[path]), patch.object(billing, 'generation', side_effect=lookup), patch.object(sys, 'argv', argv), patch.dict(billing.os.environ, {'OPENROUTER_API_KEY': 'offline'}, clear=True):
+                billing.main()
+            payload = json.loads((root / 'artifacts/inspect/openrouter-billing/20261011010203.json').read_text())
+        self.assertEqual(sorted(row['sample_id'] for row in payload['rows']), ['sample-0', 'sample-1'])
+
     def test_missing_id_does_not_claim_exact_charge(self):
         status, data = self.collect([['gen-one', None]], {'gen-one': {'cost_usd': 0.2, 'provider': 'p', 'model': 'm'}})
         self.assertEqual(status, 1)
@@ -116,6 +132,16 @@ class BillingTests(unittest.TestCase):
 
 
 class ReportTests(unittest.TestCase):
+    def test_every_suite_directory_carries_its_launcher_run_id(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            for suite in ('selected', 'ha', 'laptops', 'some_future_suite'):
+                with self.subTest(suite=suite):
+                    path = root / suite / '20261019204001210372' / 'x.eval'
+                    with patch.object(report, 'LOG_DIR', root), patch.object(report, 'read_eval_log', return_value=fake_log('e', 's', [])):
+                        row = report.export_eval(path, {}, {})[0]
+                    self.assertEqual(row['launcher_run_id'], '20261019204001210372')
+
     def test_legacy_pi_keyword_scores_are_not_semantic_outcomes(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

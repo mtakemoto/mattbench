@@ -95,7 +95,8 @@ def export_eval(path: Path, timing_by_eval: dict, billing_by_sample: dict) -> li
         raise ValueError("Invalid evaluation identity")
     rows = []
     relative_parts = path.relative_to(LOG_DIR).parts
-    launcher_run_id = relative_parts[1] if len(relative_parts) > 2 and relative_parts[0] in {"selected", "ha"} and relative_parts[1].isdigit() and 14 <= len(relative_parts[1]) <= 20 else None
+    # Launchers write to <suite>/<run_id>/; any suite directory identifies its run.
+    launcher_run_id = relative_parts[1] if len(relative_parts) > 2 and relative_parts[1].isdigit() and 14 <= len(relative_parts[1]) <= 20 else None
     for sample in log.samples or []:
         billing = billing_by_sample.get((log.eval.eval_id, sample.id))
         scores = {name: score.value for name, score in (sample.scores or {}).items()}

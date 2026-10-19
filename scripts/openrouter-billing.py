@@ -50,21 +50,21 @@ def main() -> int:
         parser.error("OPENROUTER_API_KEY is missing.")
 
     jobs = []
-    for kind in ("selected", "ha"):
-        for path in (ROOT / "artifacts/inspect" / kind / args.run_id).glob("*.eval"):
-            log = read_eval_log(path)
-            if not log.eval.model.startswith("openai-api/openrouter/"):
-                continue
-            for sample in log.samples or []:
-                attempts = [
-                    getattr(getattr(event, "output", None), "response_id", None)
-                    for event in sample.events or [] if event.event == "model"
-                ]
-                attempts = [
-                    generation_id if isinstance(generation_id, str) and re.fullmatch(r"gen-[A-Za-z0-9_-]+", generation_id) else None
-                    for generation_id in attempts
-                ]
-                jobs.append((log.eval.eval_id, sample.id, attempts))
+    # Launchers write to <suite>/<run_id>/; bill every suite that ran under this ID.
+    for path in sorted((ROOT / "artifacts/inspect").glob(f"*/{args.run_id}/*.eval")):
+        log = read_eval_log(path)
+        if not log.eval.model.startswith("openai-api/openrouter/"):
+            continue
+        for sample in log.samples or []:
+            attempts = [
+                getattr(getattr(event, "output", None), "response_id", None)
+                for event in sample.events or [] if event.event == "model"
+            ]
+            attempts = [
+                generation_id if isinstance(generation_id, str) and re.fullmatch(r"gen-[A-Za-z0-9_-]+", generation_id) else None
+                for generation_id in attempts
+            ]
+            jobs.append((log.eval.eval_id, sample.id, attempts))
 
     ids = sorted({
         generation_id for _, _, attempts in jobs

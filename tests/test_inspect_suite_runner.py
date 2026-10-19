@@ -44,6 +44,14 @@ class InspectSuiteRunnerTests(unittest.TestCase):
         self.assertEqual([row["status"] for row in state["completedCases"]], ["failed", "complete", "complete"])
         self.assertEqual(state["completedCount"], state["totalCases"])
 
+    def test_each_suite_entry_expects_only_its_own_samples(self):
+        plan = build_plan(case_id="all", include_laptops=True)
+        self.assertTrue(plan.laptop_cases)
+        self.assertEqual(set(suite.expected_samples("smoke", "smoke", plan)), {case.id for case in plan.smoke_cases})
+        self.assertEqual(set(suite.expected_samples("laptop", "laptop", plan)), {case.id for case in plan.laptop_cases})
+        first_ha = plan.ha_cases[0].id
+        self.assertEqual(dict(suite.expected_samples("ha", first_ha, plan)), {first_ha: 1})
+
 
 if __name__ == "__main__":
     unittest.main()

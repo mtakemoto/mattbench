@@ -18,18 +18,28 @@ from scripts.execution_plan import ExecutionPlan, build_plan, load_plan, require
 from scripts.run_inspect_settings import prepare_provider
 
 
-def case_score(kind: str, case_id: str, identifier: str, expected_ids: tuple[str, ...]) -> tuple[bool | None, int | None, str | None]:
+LOG_DIRECTORIES = {"smoke": "selected", "laptop": "laptops", "ha": "ha"}
+
+
+def expected_samples(kind: str, case_id: str, plan: ExecutionPlan) -> Counter:
+    """Inspect sample IDs one suite entry must produce under the frozen plan."""
+    if kind == "smoke":
+        return Counter(case.id for _ in plan.variants for case in plan.smoke_cases)
+    if kind == "laptop":
+        return Counter(case.id for case in plan.laptop_cases)
+    return Counter([case_id])
+
+
+def case_score(kind: str, identifier: str, wanted: Counter) -> tuple[bool | None, int | None, str | None]:
     """A corrupt or incomplete log is unavailable, never a fabricated score."""
-    directory = ROOT / "artifacts/inspect" / ("selected" if kind == "smoke" else "laptops" if kind == "laptop" else "ha") / identifier
+    directory = ROOT / "artifacts/inspect" / LOG_DIRECTORIES[kind] / identifier
     samples = []
     try:
         paths = sorted(directory.glob("*.eval"))
         if not paths:
             return None, None, "Score unavailable: Inspect log is missing."
         for path in paths:
-            samples.extend(sample for sample in (read_eval_log(path).samples or [])
-                           if kind == "smoke" or sample.id == case_id)
-        wanted = Counter(sample_id.split(":", 1)[1] for sample_id in expected_ids) if kind == "smoke" else Counter([case_id])
+            samples.extend(sample for sample in (read_eval_log(path).samples or []) if sample.id in wanted)
         if Counter(sample.id for sample in samples) != wanted:
             return None, None, "Score unavailable: Inspect sample IDs do not match the frozen plan."
         if any(not sample.scores for sample in samples):
@@ -131,7 +141,7 @@ def main() -> int:
             failures += 1
         item = {"caseId": case_id, "status": state, "message": message}
         if state == "complete":
-            passed, calls, diagnostic = case_score(kind, case_id, identifier, plan.sample_ids)
+            passed, calls, diagnostic = case_score(kind, identifier, expected_samples(kind, case_id, plan))
             if diagnostic:
                 item["scoreUnavailable"] = diagnostic
                 item["message"] = diagnostic
