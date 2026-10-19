@@ -9,8 +9,11 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from scripts.execution_plan import build_plan, describe, load_plan, require_calls, run_id, save_plan, validate_request
+import suites
+from scripts.console_bridge import describe
+from scripts.execution_plan import build_plan, load_plan, require_calls, run_id, save_plan, validate_request
 from scripts.run_inspect_settings import compatible_base, local_config, prepare_provider, read_env_file, validate_model
+from suites.smoke import SUITE as SMOKE
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -35,10 +38,11 @@ class ExecutionPlanTests(unittest.TestCase):
             fixture = self.fixture(directory, 3)
             for count in (3, 1):
                 self.fixture(directory, count)
-                for variant, multiplier in (("base", 1), ("both", 2)):
-                    plan = build_plan(variant, smoke_file=fixture)
+                for variants in (("base",), SMOKE.variants):
+                    plan = build_plan([SMOKE.id], variants, fixture_paths={SMOKE.id: fixture})
+                    multiplier = len(variants)
                     self.assertEqual(plan.max_calls, count * multiplier)
-                    self.assertEqual(len(plan.sample_ids), count * multiplier)
+                    self.assertEqual(sum(entry.expected_samples.total() for entry in plan.entries), count * multiplier)
                     with self.assertRaisesRegex(ValueError, "requires exactly"):
                         require_calls(plan, plan.max_calls + 1)
                     frozen = Path(directory) / "plan.json"
@@ -46,8 +50,8 @@ class ExecutionPlanTests(unittest.TestCase):
                     self.assertEqual(load_plan(frozen), plan)
             fixture.write_text("{malformed")
             self.assertEqual(load_plan(frozen).max_calls, 2)
-            with self.assertRaisesRegex(ValueError, "Cannot read execution fixture"):
-                build_plan("both", smoke_file=fixture)
+            with self.assertRaisesRegex(ValueError, "Cannot read smoke fixture"):
+                build_plan([SMOKE.id], fixture_paths={SMOKE.id: fixture})
 
     def test_plan_rejects_tampered_budget_and_invalid_json(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -80,36 +84,57 @@ class ExecutionPlanTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "loopback"):
                 compatible_base("http://10.0.0.2/v1", loopback_only=True)
 
-    def test_bridge_describes_fixtures_without_secrets_and_rejects_bad_payload(self):
-        self.assertEqual(sum(case["maxModelCalls"] for case in describe()["cases"] if case["suite"] == "smoke"),
+    def test_bridge_describes_every_suite_and_its_call_ceiling(self):
+        catalog = describe()
+        self.assertEqual([suite["id"] for suite in catalog["suites"]], list(suites.registry()))
+        self.assertEqual(sum(case["maxModelCalls"] for suite in catalog["suites"] for case in suite["cases"]),
                          build_plan().max_calls)
-        data = validate_request({"source": "freetoken", "model": "example:latest", "caseId": "smoke",
-                                 "baseUrl": "http://127.0.0.1:1111/v1", "runId": "20261011010203"})
-        self.assertEqual(data["settings"]["maxCalls"], len(data["plan"]["smokeCases"]))
-        self.assertNotIn("API_KEY", json.dumps(data))
+        self.assertNotIn("API_KEY", json.dumps(catalog))
+
+    def test_selection_accepts_all_suites_and_case_ids_and_rejects_unknown_ids(self):
+        every = build_plan()
+        self.assertEqual({case.suite for case in every.cases}, set(suites.registry()))
+        first_suite, first_case = every.cases[0].suite, every.cases[-1]
+        mixed = build_plan([first_suite, first_case.id])
+        self.assertIn(first_case, mixed.cases)
+        self.assertEqual(build_plan([first_suite, first_suite]).cases, build_plan([first_suite]).cases)
+        with self.assertRaisesRegex(ValueError, "Unknown"):
+            build_plan(["no_such_suite_or_case"])
+
+    def test_variants_must_be_supported_by_every_selected_suite(self):
+        single_variant = next(suite for suite in suites.registry().values() if suite.variants == ("base",))
+        with self.assertRaisesRegex(ValueError, "does not support"):
+            build_plan([single_variant.id], ("base", "careful"))
+
+    def test_request_returns_secret_free_settings_and_requires_cap_for_paid_models(self):
+        settings, plan = validate_request({"source": "freetoken", "model": "example:latest", "selection": [SMOKE.id],
+                                           "baseUrl": "http://127.0.0.1:1111/v1", "runId": "20261011010203"})
+        self.assertEqual(settings["maxCalls"], len(plan.cases))
+        self.assertNotIn("API_KEY", json.dumps(settings))
         with self.assertRaisesRegex(ValueError, "Confirm"):
             validate_request({"source": "openrouter", "model": "z-ai/glm-5.3-flash", "capUsd": 20})
         alias = "~z-ai/glm-flash-latest"
-        paid = validate_request({"source": "openrouter", "model": alias, "caseId": "smoke",
-                                 "capUsd": 20, "capConfirmed": True, "runId": "20261011010203"})
-        self.assertEqual(paid["settings"]["model"], alias)
+        paid, _ = validate_request({"source": "openrouter", "model": alias, "selection": [SMOKE.id],
+                                    "capUsd": 20, "capConfirmed": True, "runId": "20261011010203"})
+        self.assertEqual(paid["model"], alias)
         with self.assertRaisesRegex(ValueError, "Unknown settings fields"):
             validate_request({"source": "freetoken", "model": "test", "baseUrl": "http://localhost/v1",
                               "secret": "not-printed"})
 
     def test_free_openrouter_models_skip_the_paid_cap_gate(self):
-        free = validate_request({"source": "openrouter", "model": "minimax/minimax-m3.1-flash:free",
-                                 "caseId": "smoke", "runId": "20261011010203"})
-        self.assertIsNone(free["settings"]["capUsd"])
-        self.assertEqual(validate_request({"source": "openrouter", "model": "minimax/minimax-m3.1-flash:free",
-                                           "caseId": "smoke", "capUsd": 20, "capConfirmed": False,
-                                           "runId": "20261011010203"})["settings"]["capUsd"], 20)
+        free, _ = validate_request({"source": "openrouter", "model": "minimax/minimax-m3.1-flash:free",
+                                    "selection": [SMOKE.id], "runId": "20261011010203"})
+        self.assertIsNone(free["capUsd"])
+        capped, _ = validate_request({"source": "openrouter", "model": "minimax/minimax-m3.1-flash:free",
+                                      "selection": [SMOKE.id], "capUsd": 20, "capConfirmed": False,
+                                      "runId": "20261011010203"})
+        self.assertEqual(capped["capUsd"], 20)
         with self.assertRaisesRegex(ValueError, "before a paid run"):
-            validate_request({"source": "openrouter", "model": "z-ai/glm-5.3-flash", "caseId": "smoke",
+            validate_request({"source": "openrouter", "model": "z-ai/glm-5.3-flash", "selection": [SMOKE.id],
                               "capUsd": 20, "runId": "20261011010203"})
         with self.assertRaisesRegex(ValueError, r"between \$0 and \$20"):
             validate_request({"source": "openrouter", "model": "minimax/minimax-m3.1-flash:free",
-                              "caseId": "smoke", "capUsd": 25, "runId": "20261011010203"})
+                              "selection": [SMOKE.id], "capUsd": 25, "runId": "20261011010203"})
 
     def test_provider_requires_cap_only_for_paid_openrouter_models(self):
         with patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"}):
@@ -123,10 +148,9 @@ class ExecutionPlanTests(unittest.TestCase):
 
     def test_real_inspect_offline_provider_error_never_retries_attempt(self):
         from inspect_ai import eval_set
-        from inspect_pilot import smoke
 
         with tempfile.TemporaryDirectory() as directory:
-            plan = build_plan(smoke_file=self.fixture(directory, 2))
+            plan = build_plan([SMOKE.id], fixture_paths={SMOKE.id: self.fixture(directory, 2)})
             attempts = []
 
             def failing_provider(input, tools, tool_choice, config):
@@ -134,7 +158,7 @@ class ExecutionPlanTests(unittest.TestCase):
                 raise RuntimeError("offline simulated provider failure")
 
             success, _logs = eval_set(
-                tasks=[smoke("base", rows=plan.smoke_cases)], model="mockllm/model",
+                tasks=[SMOKE.task(plan.cases, "base")], model="mockllm/model",
                 model_args={"custom_outputs": failing_provider}, max_retries=0, retry_attempts=0,
                 max_samples=1, max_tasks=1, log_dir=str(Path(directory) / "logs"), display="none",
             )
@@ -142,33 +166,38 @@ class ExecutionPlanTests(unittest.TestCase):
             self.assertGreater(len(attempts), 0)
             self.assertLessEqual(len(attempts), plan.max_calls)
 
-    def test_selected_omitted_run_id_reaches_endpoint_validation(self):
-        selected = runner("run-inspect-selected.py")
-        argv = ["run-inspect-selected.py", "--source", "freetoken", "--model", "test:latest",
-                "--variant", "base", "--base-url", "http://127.0.0.1:1111/v1",
-                "--max-calls", str(build_plan().max_calls)]
-        with patch.object(sys, "argv", argv), patch.object(selected, "prepare_provider",
-                                                          side_effect=ValueError("offline endpoint probe")) as provider:
-            with self.assertRaises(SystemExit) as error:
-                selected.main()
-            self.assertEqual(error.exception.code, 2)
-            self.assertEqual(provider.call_count, 1)
+    def case_runner_argv(self, directory, max_calls):
+        plan_file = Path(directory) / "plan.json"
+        save_plan(plan_file, build_plan([SMOKE.id]))
+        return ["run-inspect-cases.py", "--suite", SMOKE.id, "--plan-file", str(plan_file),
+                "--source", "freetoken", "--model", "test:latest", "--base-url", "http://127.0.0.1:1111/v1",
+                "--max-calls", str(max_calls)]
 
-    def test_selected_bad_budget_stops_before_endpoint_discovery(self):
-        selected = runner("run-inspect-selected.py")
-        argv = ["run-inspect-selected.py", "--source", "freetoken", "--model", "test:latest",
-                "--variant", "both", "--base-url", "http://127.0.0.1:1111/v1", "--max-calls", "2"]
-        with patch.object(sys, "argv", argv), patch.object(selected, "prepare_provider") as provider:
-            with self.assertRaises(SystemExit):
-                selected.main()
-            provider.assert_not_called()
+    def test_case_runner_omitted_run_id_reaches_endpoint_validation(self):
+        cases = runner("run-inspect-cases.py")
+        with tempfile.TemporaryDirectory() as directory:
+            argv = self.case_runner_argv(directory, build_plan([SMOKE.id]).max_calls)
+            with patch.object(sys, "argv", argv), patch.object(cases, "prepare_provider",
+                                                              side_effect=ValueError("offline endpoint probe")) as provider:
+                with self.assertRaises(SystemExit) as error:
+                    cases.main()
+        self.assertEqual(error.exception.code, 2)
+        self.assertEqual(provider.call_count, 1)
 
+    def test_case_runner_bad_budget_stops_before_endpoint_discovery(self):
+        cases = runner("run-inspect-cases.py")
+        with tempfile.TemporaryDirectory() as directory:
+            argv = self.case_runner_argv(directory, 999)
+            with patch.object(sys, "argv", argv), patch.object(cases, "prepare_provider") as provider:
+                with self.assertRaises(SystemExit):
+                    cases.main()
+        provider.assert_not_called()
 
     def test_suite_wrong_whole_cap_rejects_before_child(self):
         suite = runner("run-inspect-suite.py")
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "plan.json"
-            save_plan(path, build_plan(suite=True))
+            save_plan(path, build_plan())
             argv = ["run-inspect-suite.py", "--source", "compatible", "--model", "example:latest",
                     "--base-url", "http://127.0.0.1:1111/v1", "--run-id", "20261011010203",
                     "--progress-file", str(Path(directory) / "progress.json"),
@@ -182,10 +211,10 @@ class ExecutionPlanTests(unittest.TestCase):
         suite = runner("run-inspect-suite.py")
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
-            plan = build_plan(suite=True)
+            plan = build_plan()
             plan_file = directory / "plan.json"
             save_plan(plan_file, plan)
-            log_dir = directory / "artifacts/inspect/selected/20261011010203"
+            log_dir = directory / plan.entries[0].suite.id / "20261011010203"
             log_dir.mkdir(parents=True)
             (log_dir / "corrupt.eval").write_text("{damaged")
             commands = []
@@ -198,12 +227,12 @@ class ExecutionPlanTests(unittest.TestCase):
                     "--base-url", "http://127.0.0.1:1111/v1", "--run-id", "20261011010203",
                     "--progress-file", str(directory / "progress.json"), "--max-calls", str(plan.max_calls),
                     "--plan-file", str(plan_file)]
-            with patch.object(suite, "ROOT", directory), patch.object(sys, "argv", argv), \
+            with patch.object(suites, "INSPECT_LOG_ROOT", directory), patch.object(sys, "argv", argv), \
                     patch.object(suite, "read_eval_log", side_effect=ValueError("damaged score")), \
                     patch.object(suite, "run_bounded", side_effect=fake_run):
                 self.assertEqual(suite.main(), 0)
             progress = json.loads((directory / "progress.json").read_text())
-            self.assertEqual(len(commands), len(plan.ha_cases) + 1)
+            self.assertEqual(len(commands), len(plan.entries))
             self.assertIn("Score unavailable", progress["completedCases"][0]["scoreUnavailable"])
             self.assertTrue(all(row["status"] == "complete" for row in progress["completedCases"]))
 

@@ -4,7 +4,6 @@ import importlib.util
 import json
 import sys
 import tempfile
-import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -124,7 +123,7 @@ class BillingTests(unittest.TestCase):
             destination.parent.mkdir(parents=True)
             destination.write_text('{"previous":true}\n')
             argv = ['openrouter-billing.py', '--run-id', '20261011010203']
-            with patch.object(billing, 'ROOT', root), patch.object(sys, 'argv', argv), patch.dict(billing.os.environ, {'OPENROUTER_API_KEY': 'offline'}, clear=True), patch.object(billing.os, 'replace', side_effect=OSError('interrupted')):
+            with patch.object(billing, 'ROOT', root), patch.object(sys, 'argv', argv), patch.dict(billing.os.environ, {'OPENROUTER_API_KEY': 'offline'}, clear=True), patch.object(Path, 'replace', side_effect=OSError('interrupted')):
                 with self.assertRaises(OSError):
                     billing.main()
             self.assertEqual(json.loads(destination.read_text()), {'previous': True})
@@ -169,34 +168,6 @@ class ReportTests(unittest.TestCase):
             self.assertIsNone(row['cost_usd'])
             self.assertEqual(row['partial_cost_usd'], 0.7)
             self.assertTrue(row['accounting_legacy'])
-
-    def test_atomic_publish_readers_and_failed_replace(self):
-        with tempfile.TemporaryDirectory() as temp:
-            destination = Path(temp) / 'summary.json'
-            destination.write_text('{"rows":["old"]}\n')
-            entered, proceed = threading.Event(), threading.Event()
-            original = report.json.dumps
-
-            def slow_dump(*args, **kwargs):
-                entered.set()
-                self.assertTrue(proceed.wait(5))
-                return original(*args, **kwargs)
-
-            with patch.object(report.json, 'dumps', side_effect=slow_dump):
-                writer = threading.Thread(target=report.atomic_json, args=(destination, {'rows': ['new']}))
-                writer.start()
-                self.assertTrue(entered.wait(5))
-                for _ in range(200):
-                    self.assertEqual(json.loads(destination.read_text()), {'rows': ['old']})
-                proceed.set()
-                writer.join(5)
-                self.assertFalse(writer.is_alive())
-            self.assertEqual(json.loads(destination.read_text()), {'rows': ['new']})
-            with patch.object(report.os, 'replace', side_effect=OSError('interrupted')):
-                with self.assertRaises(OSError):
-                    report.atomic_json(destination, {'rows': ['incomplete']})
-            self.assertEqual(json.loads(destination.read_text()), {'rows': ['new']})
-            self.assertEqual(list(destination.parent.glob('*.tmp')), [])
 
     def test_valid_artifacts_survive_corrupt_json_and_schema(self):
         with tempfile.TemporaryDirectory() as temp:

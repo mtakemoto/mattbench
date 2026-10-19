@@ -9,6 +9,20 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
+SOURCES = ("freetoken", "openrouter", "compatible")
+"""Model sources: loopback FreeToken, hosted OpenRouter, or a private OpenAI-compatible endpoint."""
+OPENROUTER_BASE = "https://openrouter.ai/api/v1"
+GENERATION = {
+    "model_args": {"strict_tools": False},
+    "temperature": 0,
+    "max_retries": 0,
+    "retry_on_error": 0,
+    "timeout": 120,
+    "max_samples": 1,
+    "max_tasks": 1,
+    "display": "plain",
+}
+"""Inspect settings every scored run shares, so results stay comparable; suites set max_tokens."""
 MODEL_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._/-:~")
 SOURCE_KEYS = ("OPENROUTER_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "FREETOKEN_API_KEY", "COMPATIBLE_API_KEY")
 
@@ -36,22 +50,29 @@ def _unquote(value: str) -> str:
     return value
 
 
+def resolve_base_url(source: str, base_url: str = "") -> str:
+    """Validated endpoint for a source; FreeToken falls back to the configured local endpoint."""
+    if source not in SOURCES:
+        raise ValueError(f"source must be one of {', '.join(SOURCES)}.")
+    if source == "openrouter":
+        return ""
+    if source == "freetoken" and not base_url:
+        base_url, _ = local_config()
+    return compatible_base(base_url, loopback_only=source == "freetoken")
+
+
 def prepare_provider(source: str, model: str, *, base_url: str = "", cap_usd: float | None = None,
                      discover: bool = True) -> str:
     """Validate source before mutating environment; return the Inspect model name."""
     validate_model(model)
-    if source not in ("freetoken", "compatible", "openrouter"):
-        raise ValueError("Unknown model source.")
+    base = resolve_base_url(source, base_url) or OPENROUTER_BASE
     if source == "openrouter":
         if not is_free_model(model) or cap_usd is not None:
             validate_cap(cap_usd)
         if not os.environ.get("OPENROUTER_API_KEY"):
             raise ValueError("OPENROUTER_API_KEY is missing.")
-        base = "https://openrouter.ai/api/v1"
-    else:
-        base = compatible_base(base_url, loopback_only=source == "freetoken")
-        if discover and model not in served_models(base):
-            raise ValueError("Selected model is not served at that endpoint.")
+    elif discover and model not in served_models(base):
+        raise ValueError("Selected model is not served at that endpoint.")
     for key in SOURCE_KEYS:
         if source != "openrouter" or key != "OPENROUTER_API_KEY":
             os.environ.pop(key, None)

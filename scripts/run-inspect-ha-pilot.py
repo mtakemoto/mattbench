@@ -29,10 +29,12 @@ from mcp.client.stdio import stdio_client
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from inspect_ai import eval as run_eval
-from inspect_pilot import ha_case
+from inspect_pilot import HA_STATE_READER, ha_matches
 from scripts.bounded_process import run_bounded
-from scripts.execution_plan import build_plan, load_plan, run_id as run_id_value
-from scripts.run_inspect_settings import prepare_provider
+from scripts.execution_plan import build_plan, load_plan, require_calls, run_id as run_id_value
+from scripts.json_files import write_json_atomic
+from scripts.run_inspect_settings import GENERATION, SOURCES, prepare_provider
+from suites.smart_home import SUITE
 
 SYNTHETIC_SHA = "3a943b1346cad6c4d41f9c148921f87c9229bb0b"
 HA_IMAGE = "mattbench-synthetic-ha:2026.10.1-v1"
@@ -163,13 +165,7 @@ async def bootstrap(ha_url: str, password: str, fixture_name: str) -> str:
 
 
 def state(container: str, token: str, entity_id: str) -> dict:
-    source = (
-        "import json,sys,urllib.request; p=json.load(sys.stdin); "
-        "r=urllib.request.Request('http://127.0.0.1:8123/api/states/'+p['entity'], "
-        "headers={'Authorization':'Bearer '+p['token']}); "
-        "print(urllib.request.urlopen(r,timeout=10).read().decode())"
-    )
-    return json.loads(docker_python(container, source, json.dumps({"entity": entity_id, "token": token})))
+    return json.loads(docker_python(container, HA_STATE_READER, json.dumps({"entity": entity_id, "token": token})))
 
 
 async def apply_preflight_action(container: str, action: dict, entities: list[str]) -> None:
@@ -195,11 +191,6 @@ async def apply_preflight_action(container: str, action: dict, entities: list[st
                     raise RuntimeError("Synthetic ha-mcp state read failed")
 
 
-def matches(actual: dict, wanted: dict) -> bool:
-    return all(matches(actual.get(key, {}), value) if isinstance(value, dict) else actual.get(key) == value
-               for key, value in wanted.items())
-
-
 def progress(path: str, case_id: str, message: str, phase: str = "running") -> None:
     if not path:
         return
@@ -211,10 +202,7 @@ def progress(path: str, case_id: str, message: str, phase: str = "running") -> N
         pass
     current.update({"phase": phase, "currentCaseId": case_id, "message": message,
                     "updatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
-    temporary = destination.with_suffix(destination.suffix + ".tmp")
-    temporary.parent.mkdir(parents=True, exist_ok=True)
-    temporary.write_text(json.dumps(current) + "\n")
-    temporary.replace(destination)
+    write_json_atomic(destination, current)
 
 def best_effort_progress(path: str, case_id: str, message: str) -> None:
     try:
@@ -248,28 +236,10 @@ def cleanup_resources(mcp_container: str, ha_container: str, network: str) -> li
     return diagnostics
 
 
-def publish_timing(path: Path, metrics: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = None
-    try:
-        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
-                                         prefix=f".{path.name}.", delete=False) as output:
-            temporary = Path(output.name)
-            json.dump(metrics, output, indent=2)
-            output.write("\n")
-        temporary.replace(path)
-    finally:
-        if temporary is not None:
-            try:
-                temporary.unlink(missing_ok=True)
-            except OSError:
-                pass
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--case", default="mxz_coordinator_target")
-    parser.add_argument("--source", choices=("freetoken", "openrouter", "compatible"), default="freetoken")
+    parser.add_argument("--source", choices=SOURCES, default="freetoken")
     parser.add_argument("--model")
     parser.add_argument("--base-url")
     parser.add_argument("--cap-usd", type=float)
@@ -280,11 +250,12 @@ def main() -> None:
     parser.add_argument("--preflight-only", action="store_true", help="Verify fixture and service path without a model")
     args = parser.parse_args()
     try:
-        plan = load_plan(Path(args.plan_file)) if args.plan_file else build_plan(case_id=args.case)
+        plan = load_plan(Path(args.plan_file)) if args.plan_file else build_plan([args.case])
         run_id = run_id_value(args.run_id or None)
-        case = plan.ha_case(args.case)
-        if args.max_calls is not None and args.max_calls != case["max_model_calls"]:
-            raise ValueError("HA call ceiling must match the confirmed execution plan.")
+        entry = plan.entry(SUITE.id, [args.case])
+        case = entry.cases[0].data
+        if args.max_calls is not None:
+            require_calls(entry, args.max_calls, scope="HA case")
         if not args.preflight_only and not args.plan_file and args.max_calls is None:
             raise ValueError("A frozen execution plan or confirmed --max-calls is required.")
         if not args.preflight_only:
@@ -292,8 +263,8 @@ def main() -> None:
                 parser.error("Model is required for a benchmark run.")
             model_name = prepare_provider(args.source, args.model, base_url=args.base_url or "",
                                           cap_usd=args.cap_usd)
-    except (ValueError, StopIteration) as error:
-        parser.error(str(error) if not isinstance(error, StopIteration) else "Unknown HA case in execution plan.")
+    except ValueError as error:
+        parser.error(str(error))
 
     clock_start = time.monotonic()
     setup_done: float | None = None
@@ -347,7 +318,7 @@ def main() -> None:
                             time.sleep(1)
                     else:
                         raise RuntimeError("Synthetic fixture entities did not appear")
-                    if not all(matches(actual[entity], wanted) for entity, wanted in case["initial"].items()):
+                    if not all(ha_matches(actual[entity], wanted) for entity, wanted in case["initial"].items()):
                         raise RuntimeError("Synthetic fixture initial state differs from pinned assertions")
                     env_file = Path(temp) / "mcp.env"
                     env_file.write_text(f"HOMEASSISTANT_URL=http://{ha_container}:8123\nHOMEASSISTANT_TOKEN={token}\n")
@@ -364,7 +335,7 @@ def main() -> None:
                         progress(args.progress_file, args.case, "Checking the synthetic service and state readback")
                         asyncio.run(apply_preflight_action(mcp_container, case["action"], list(case["expected"])))
                         actual = {entity: state(ha_container, token, entity) for entity in case["expected"]}
-                        if not all(matches(actual[entity], wanted) for entity, wanted in case["expected"].items()):
+                        if not all(ha_matches(actual[entity], wanted) for entity, wanted in case["expected"].items()):
                             raise RuntimeError("Synthetic service did not produce pinned final state")
                         eval_done = time.monotonic()
                         outcome = "preflight_passed"
@@ -373,11 +344,9 @@ def main() -> None:
                         progress(args.progress_file, args.case, "Running model against the disposable Home Assistant")
                         print(f"Running {args.case} through real ha-mcp and disposable Synthetic Home", flush=True)
                         logs = run_eval(
-                            tasks=[ha_case(args.case, case=case)], model=model_name,
-                            model_args={"strict_tools": False}, temperature=0, max_tokens=512,
-                            max_retries=0, task_retry_attempts=0, retry_on_error=0,
-                            timeout=120, max_samples=1, max_tasks=1,
-                            log_dir=str(ROOT / "artifacts/inspect/ha" / run_id), display="plain",
+                            tasks=[SUITE.task(entry.cases, plan.variants[0])], model=model_name,
+                            max_tokens=SUITE.max_tokens, task_retry_attempts=0,
+                            log_dir=str(SUITE.log_dir(run_id)), **GENERATION,
                         )
                         eval_done = time.monotonic()
                         for log in logs:
@@ -408,7 +377,7 @@ def main() -> None:
                     "total_wall_seconds": round(finished - clock_start, 3),
                 }
                 try:
-                    publish_timing(ROOT / "artifacts/inspect/ha-timing" / f"{run_id}-{args.case}.json", metrics)
+                    write_json_atomic(ROOT / "artifacts/inspect/ha-timing" / f"{run_id}-{args.case}.json", metrics, indent=2)
                 except Exception as error:
                     print(f"HA timing publication failed ({type(error).__name__}).", file=sys.stderr, flush=True)
                     outcome = "failed"

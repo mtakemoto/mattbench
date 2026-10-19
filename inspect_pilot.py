@@ -3,7 +3,6 @@
 import json
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from inspect_ai import Task, task
 from inspect_ai.agent import react
@@ -15,17 +14,22 @@ from inspect_ai.tool import mcp_server_stdio, mcp_tools
 from inspect_ai.util import sandbox
 
 from scripts.bounded_process import run_bounded_async
-from scripts.execution_plan import build_plan
-
-if TYPE_CHECKING:
-    from scripts.execution_plan import SmokeCase
+from suites.smart_home import SUITE as SMART_HOME
 
 
 ROOT = Path(__file__).resolve().parent
+HA_STATE_READER = (
+    "import json,sys,urllib.request; p=json.load(sys.stdin); "
+    "r=urllib.request.Request('http://127.0.0.1:8123/api/states/'+p['entity'], "
+    "headers={'Authorization':'Bearer '+p['token']}); "
+    "print(urllib.request.urlopen(r,timeout=10).read().decode())"
+)
+"""Python run inside the disposable HA container to read one entity's state; input is JSON on stdin."""
 
 
 @task
-def smoke(prompt_variant: str = "base", rows: tuple["SmokeCase", ...] | None = None) -> Task:
+def smoke(prompt_variant: str = "base", rows: tuple[dict, ...] | None = None) -> Task:
+    """Exact-answer questions; pass frozen plan rows so a later fixture edit cannot change a run."""
     if prompt_variant not in {"base", "careful"}:
         raise ValueError("Unknown smoke prompt variant")
     if rows is None:
@@ -33,11 +37,8 @@ def smoke(prompt_variant: str = "base", rows: tuple["SmokeCase", ...] | None = N
     return Task(
         dataset=[
             Sample(
-                id=row["id"] if isinstance(row, dict) else row.id,
-                input=row["prompt"] if isinstance(row, dict) else row.prompt,
-                target=row["expected"] if isinstance(row, dict) else row.expected,
-                metadata={"category": row["category"] if isinstance(row, dict) else row.category,
-                          "fixture": "tasks/smoke.json", "prompt_variant": prompt_variant},
+                id=row["id"], input=row["prompt"], target=row["expected"],
+                metadata={"category": row["category"], "fixture": "tasks/smoke.json", "prompt_variant": prompt_variant},
             )
             for row in rows
         ],
@@ -103,22 +104,15 @@ def synthetic_ha_state(case: dict) -> object:
         container = os.environ["MATTBENCH_SYNTHETIC_HA_CONTAINER"]
         token = os.environ["MATTBENCH_SYNTHETIC_HA_TOKEN"]
         async def get_state(entity_id: str) -> dict:
-            script = (
-                "import json,sys,urllib.request; "
-                "p=json.load(sys.stdin); "
-                "r=urllib.request.Request('http://127.0.0.1:8123/api/states/'+p['entity'], "
-                "headers={'Authorization':'Bearer '+p['token']}); "
-                "print(urllib.request.urlopen(r,timeout=10).read().decode())"
-            )
             result = await run_bounded_async(
-                ["docker", "exec", "-i", container, "python", "-c", script],
+                ["docker", "exec", "-i", container, "python", "-c", HA_STATE_READER],
                 timeout=20, input=json.dumps({"entity": entity_id, "token": token}),
                 text=True, capture_output=True, check=True,
             )
             return json.loads(result.stdout)
         correct = True
         for entity_id, wanted in case["expected"].items():
-            if not _ha_matches(await get_state(entity_id), wanted):
+            if not ha_matches(await get_state(entity_id), wanted):
                 correct = False
         trace_ok, trace_reason = safe_ha_trace(state.messages, case)
         return Score(
@@ -153,11 +147,11 @@ def _ha_result(message: object) -> dict | None:
     return payload
 
 
-def _ha_matches(actual: dict, wanted: dict) -> bool:
+def ha_matches(actual: dict, wanted: dict) -> bool:
     if not isinstance(actual, dict):
         return False
     return all(
-        _ha_matches(actual.get(key, {}), value) if isinstance(value, dict)
+        ha_matches(actual.get(key, {}), value) if isinstance(value, dict)
         else actual.get(key) == value
         for key, value in wanted.items()
     )
@@ -263,7 +257,7 @@ def safe_ha_trace(messages: list, case: dict) -> tuple[bool, str]:
                             or not isinstance(state.get("state"), str)):
                         continue
                     if (request_epoch != 0 and request_epoch == completed_write_epoch
-                            and requested in readbacks and _ha_matches(state, case["expected"][requested])):
+                            and requested in readbacks and ha_matches(state, case["expected"][requested])):
                         verified.add(requested)
                     elif request_epoch == 0 and completed_write_epoch == 0:
                         observed.add(requested)
@@ -277,7 +271,7 @@ def safe_ha_trace(messages: list, case: dict) -> tuple[bool, str]:
 
 
 def ha_cases() -> dict[str, dict]:
-    return {case.id: case.to_dict() for case in build_plan(case_id="all").ha_cases}
+    return {case.id: case.data for case in SMART_HOME.load_cases()}
 
 
 @task

@@ -14,12 +14,12 @@ from scripts.run_inspect_settings import local_settings, set_local_model_environ
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--task", choices=("smoke", "coding", "all"), default="all")
+    tasks = {task.__name__: task for task in (smoke, coding)}
+    parser.add_argument("--task", choices=(*tasks, "all"), default="all")
     args = parser.parse_args()
     base, model = local_settings()
     set_local_model_environment(base)
     print(f"Inspect local pilot: {model}", flush=True)
-    tasks = {"smoke": smoke, "coding": coding}
     selected = list(tasks) if args.task == "all" else [args.task]
     logs = run_eval(
         tasks=[tasks[name]() for name in selected],

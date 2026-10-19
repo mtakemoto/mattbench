@@ -5,7 +5,7 @@ import json
 import math
 import os
 import re
-import tempfile
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -15,8 +15,9 @@ from urllib.request import Request, urlopen
 
 from inspect_ai.log import read_eval_log
 
-
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from scripts.json_files import write_json_atomic
 
 
 def generation(generation_id: str, key: str) -> dict:
@@ -122,18 +123,7 @@ def main() -> int:
         "unknown_attempts": sum(row["unknown_attempts"] for row in rows),
         "lookup_failures": len(set(ids) - billed.keys()),
     }
-    output = ROOT / "artifacts/inspect/openrouter-billing" / f"{args.run_id}.json"
-    output.parent.mkdir(parents=True, exist_ok=True)
-    temporary = None
-    try:
-        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=output.parent,
-                                         prefix=f".{output.name}.", suffix=".tmp", delete=False) as file:
-            temporary = Path(file.name)
-            file.write(json.dumps(result, indent=2) + "\n")
-        os.replace(temporary, output)
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
+    write_json_atomic(ROOT / "artifacts/inspect/openrouter-billing" / f"{args.run_id}.json", result, indent=2)
     print(f"Billing metadata: {len(billed)}/{result['generation_attempts']} model attempts across {len(rows)} samples", flush=True)
     return 0 if run_complete else 1
 

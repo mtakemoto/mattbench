@@ -2,11 +2,9 @@
 
 import importlib.util
 import io
-import json
 import signal
 import subprocess
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -41,7 +39,7 @@ class HaPilotProcessTests(unittest.TestCase):
              patch.object(pilot, "wait_http", side_effect=RuntimeError("original setup failure")), \
              patch.object(pilot, "progress", side_effect=fail_progress), \
              patch.object(pilot, "run_bounded", side_effect=docker), \
-             patch.object(pilot, "publish_timing") as publish:
+             patch.object(pilot, "write_json_atomic") as publish:
             with self.assertRaisesRegex(RuntimeError, "original setup failure"):
                 pilot.main()
         self.assertTrue(any(cmd[1:3] == ["network", "create"] for cmd in calls))
@@ -60,7 +58,7 @@ class HaPilotProcessTests(unittest.TestCase):
 
         argv = [str(SCRIPT), "--preflight-only", "--run-id", "20261011000000001"]
         with patch.object(sys, "argv", argv), patch.object(pilot, "install_synthetic_component"), \
-             patch.object(pilot, "progress"), patch.object(pilot, "publish_timing") as publish, \
+             patch.object(pilot, "progress"), patch.object(pilot, "write_json_atomic") as publish, \
              patch.object(pilot, "run_bounded", side_effect=run), \
              patch.object(pilot, "wait_http", side_effect=lambda *_: signal.raise_signal(signal.SIGTERM)):
             with self.assertRaises(pilot.WorkerInterrupted):
@@ -100,21 +98,11 @@ class HaPilotProcessTests(unittest.TestCase):
         with patch.object(sys, "argv", argv), patch.object(pilot, "progress"), \
              patch.object(pilot, "install_synthetic_component", side_effect=RuntimeError("setup failed")), \
              patch.object(pilot, "run_bounded", side_effect=result), \
-             patch.object(pilot, "publish_timing", side_effect=OSError("timing cannot publish")), \
+             patch.object(pilot, "write_json_atomic", side_effect=OSError("timing cannot publish")), \
              patch.object(sys, "stderr", io.StringIO()) as errors:
             with self.assertRaisesRegex(RuntimeError, "setup failed"):
                 pilot.main()
         self.assertIn("HA timing publication failed (OSError)", errors.getvalue())
-
-    def test_timing_replacement_failure_preserves_old_record(self):
-        with tempfile.TemporaryDirectory() as directory:
-            destination = Path(directory) / "timing.json"
-            destination.write_text(json.dumps({"status": "previous"}))
-            with patch.object(Path, "replace", side_effect=OSError("publication stopped")):
-                with self.assertRaises(OSError):
-                    pilot.publish_timing(destination, {"status": "complete"})
-            self.assertEqual(json.loads(destination.read_text()), {"status": "previous"})
-            self.assertEqual(list(destination.parent.iterdir()), [destination])
 
 
 if __name__ == "__main__":

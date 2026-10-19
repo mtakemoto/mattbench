@@ -6,15 +6,16 @@ import os
 import signal
 import subprocess
 import sys
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from scripts.bounded_process import run_bounded
-from scripts.execution_plan import describe, validate_request
+from scripts.execution_plan import load_plan, validate_request
+from scripts.json_files import write_json_atomic
 from scripts.run_inspect_settings import read_env_file
+from suites import RunTarget
 
 
 def now() -> str:
@@ -22,17 +23,7 @@ def now() -> str:
 
 
 def atomic_json(path: Path, value: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = None
-    try:
-        with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, prefix=f".{path.name}.", delete=False) as stream:
-            temporary = Path(stream.name)
-            json.dump(value, stream, allow_nan=False)
-            stream.write("\n")
-        temporary.replace(path)
-    finally:
-        if temporary:
-            temporary.unlink(missing_ok=True)
+    write_json_atomic(path, value, allow_nan=False)
 
 
 def read_job(directory: Path) -> dict | None:
@@ -40,6 +31,11 @@ def read_job(directory: Path) -> dict | None:
     if not path.exists():
         return None
     job = json.loads(path.read_text())
+    if isinstance(job, dict) and "caseId" in job:
+        # Jobs written before suite discovery stored one selection and one variant.
+        job["selection"] = [job.pop("caseId")]
+        variant = job.pop("variant", "base")
+        job["variants"] = ["base", "careful"] if variant == "both" else [variant]
     if not isinstance(job, dict) or not isinstance(job.get("id"), str) or job.get("status") not in {"running", "complete", "failed", "interrupted"}:
         raise ValueError("Invalid persisted benchmark job.")
     return job
@@ -89,19 +85,16 @@ def start_job(payload: dict, directory: Path) -> dict:
     try:
         if not isinstance(payload, dict) or type(payload.get("maxCalls")) is not int:
             raise ValueError("Confirm an integer maxCalls ceiling before starting a benchmark.")
-        validated = validate_request(payload)
-        settings, plan = validated["settings"], validated["plan"]
+        settings, plan = validate_request(payload)
         job_id = settings["runId"]
         if (directory / f"{job_id}.plan.json").exists():
             raise ValueError("Run ID already has a frozen plan; choose another run ID.")
-        case_id = settings["caseId"]
-        entries = (["smoke"] if plan["smokeCases"] else []) + [case["id"] for case in plan["haCases"]]
         timestamp = now()
         job = {"id": job_id, "status": "running", "phase": "validating", "source": settings["source"],
-               "model": settings["model"], "variant": settings["variant"], "caseId": case_id,
+               "model": settings["model"], "variants": settings["variants"], "selection": settings["selection"],
                "startedAt": timestamp, "updatedAt": timestamp, "completedCases": [], "completedCount": 0,
-               "totalCases": len(entries), "message": "Validating frozen execution plan"}
-        atomic_json(directory / f"{job_id}.plan.json", plan)
+               "totalCases": len(plan.entries), "message": "Validating frozen execution plan"}
+        atomic_json(directory / f"{job_id}.plan.json", plan.to_dict())
         atomic_json(directory / f"{job_id}.request.json", settings)
         atomic_json(directory / "job.json", job)
         ready_read, ready_write = os.pipe()
@@ -141,24 +134,14 @@ def start_job(payload: dict, directory: Path) -> dict:
 
 
 def command(settings: dict, directory: Path) -> tuple[list[str], float]:
-    job_id, case_id = settings["runId"], settings["caseId"]
-    common = ["--source", settings["source"], "--model", settings["model"], "--run-id", job_id,
-              "--plan-file", str(directory / f"{job_id}.plan.json"), "--max-calls", str(settings["maxCalls"])]
-    if settings["baseUrl"]:
-        common += ["--base-url", settings["baseUrl"]]
-    if settings["source"] == "openrouter" and settings["capUsd"] is not None:
-        common += ["--cap-usd", str(settings["capUsd"])]
-    progress = ["--progress-file", str(directory / f"{job_id}.progress.json")]
-    if case_id in ("all", "smart_home", "ha"):
-        # Each child has its own bound; the outer budget includes teardown grace per case.
-        plan = json.loads((directory / f"{job_id}.plan.json").read_text())
-        budget = plan["smokeCalls"] * 125 + 120 + 660 * len(plan["haCases"])
-        return [sys.executable, str(ROOT / "scripts/run-inspect-suite.py"), *common, *progress], budget
-    if case_id == "smoke":
-        return [sys.executable, str(ROOT / "scripts/run-inspect-selected.py"), *common, "--variant", settings["variant"]], settings["maxCalls"] * 125 + 60
-    if case_id in ("laptop", "laptop_shopping"):
-        return [sys.executable, str(ROOT / "scripts/run-inspect-laptop.py"), *common, *progress], settings["maxCalls"] * 125 + 60
-    return [sys.executable, str(ROOT / "scripts/run-inspect-ha-pilot.py"), *common, "--case", case_id, *progress], 600
+    """Suite orchestrator command for a frozen run, and its whole-run deadline in seconds."""
+    job_id = settings["runId"]
+    plan_file = directory / f"{job_id}.plan.json"
+    target = RunTarget(settings["source"], settings["model"], job_id, plan_file,
+                       settings["baseUrl"], settings["capUsd"], directory / f"{job_id}.progress.json")
+    arguments = [*target.arguments(), "--max-calls", str(settings["maxCalls"]),
+                 "--progress-file", str(target.progress_file)]
+    return [sys.executable, str(ROOT / "scripts/run-inspect-suite.py"), *arguments], load_plan(plan_file).deadline_seconds
 
 
 def merge_progress(directory: Path, job_id: str) -> None:
@@ -171,25 +154,6 @@ def merge_progress(directory: Path, job_id: str) -> None:
         update_job(directory, job_id, **fields)
     except (ValueError, OSError):
         print("Warning: progress artifact unavailable; retaining durable worker state.", flush=True)
-
-
-def complete_scores(directory: Path, job_id: str) -> list[dict]:
-    job = read_job(directory)
-    if not job or job["id"] != job_id:
-        raise RuntimeError("Benchmark ownership changed.")
-    entries = job["completedCases"]
-    summary = ROOT / "artifacts/inspect/summary.json"
-    if not summary.exists():
-        return entries
-    rows = json.loads(summary.read_text())["rows"]
-    for entry in entries:
-        selected = [row for row in rows if row.get("launcher_run_id") == job_id and
-                    (row.get("fixture") == "tasks/smoke.json" if entry["caseId"] == "smoke" else row.get("sample_id") == entry["caseId"])]
-        if selected:
-            entry["passed"] = (all(row.get("passed") is True for row in selected)
-                               if all(row.get("passed") is not None for row in selected) else None)
-            entry["modelCalls"] = sum(row.get("model_calls", 0) for row in selected)
-    return entries
 
 
 def work(job_id: str, directory: Path, lock_fd: int, ready_fd: int) -> int:
@@ -208,8 +172,6 @@ def work(job_id: str, directory: Path, lock_fd: int, ready_fd: int) -> int:
         update_job(directory, job_id, phase="running", message="Running frozen benchmark selection")
         result = run_bounded(args, timeout=budget, cwd=ROOT, terminate_grace=60)
         merge_progress(directory, job_id)
-        if settings["caseId"] != "all":
-            update_job(directory, job_id, completedCases=[{"caseId": settings["caseId"], "status": "complete" if result.returncode == 0 else "failed"}], completedCount=1)
         billing_ok = True
         if settings["source"] == "openrouter":
             update_job(directory, job_id, phase="billing", message="Reading billed OpenRouter cost")
@@ -226,7 +188,7 @@ def work(job_id: str, directory: Path, lock_fd: int, ready_fd: int) -> int:
             summary = json.loads((ROOT / "artifacts/inspect/summary.json").read_text())
             if summary.get("warnings"):
                 warning = " Report is incomplete; inspect artifact warnings."
-        update_job(directory, job_id, completedCases=complete_scores(directory, job_id), status="complete" if ok else "failed",
+        update_job(directory, job_id, status="complete" if ok else "failed",
                    phase="complete" if ok else "failed", finishedAt=now(), pid=None,
                    message=(("Run and export complete." if billing_ok else "Run complete; billed cost is incomplete.") if ok else
                             "Run or export failed; see the ignored local run log.") + warning)
@@ -249,7 +211,6 @@ def main() -> int:
     parser.add_argument("--directory", type=Path, default=ROOT / "artifacts/web")
     parser.add_argument("--start", action="store_true")
     parser.add_argument("--status", action="store_true")
-    parser.add_argument("--describe", action="store_true")
     parser.add_argument("--work")
     parser.add_argument("--lock-fd", type=int)
     parser.add_argument("--ready-fd", type=int)
@@ -259,12 +220,10 @@ def main() -> int:
     try:
         if args.start:
             result = start_job(json.load(sys.stdin), args.directory)
-        elif args.describe:
-            result = describe()
         elif args.status:
             result = reconcile(args.directory)
         else:
-            parser.error("Choose --start, --status or --describe.")
+            parser.error("Choose --start or --status.")
         print(json.dumps(result, allow_nan=False))
         return 0
     except (ValueError, OSError) as error:

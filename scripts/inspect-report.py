@@ -2,23 +2,19 @@
 
 import json
 import math
-import os
-import tempfile
+import sys
 from pathlib import Path
 
 from inspect_ai.log import read_eval_log
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from scripts.inspect_results import launcher_run_id, sample_outcome
+from scripts.json_files import write_json_atomic
 
 
 ROOT = Path(__file__).resolve().parents[1]
 LOG_DIR = ROOT / "artifacts/inspect"
 
-
-def passed(value: object) -> bool | None:
-    if value in ("C", True, 1):
-        return True
-    if value in ("I", False, 0):
-        return False
-    return None
 
 def read_billing_rows(path: Path) -> list[dict]:
     payload = json.loads(path.read_text())
@@ -75,28 +71,12 @@ def read_timing(path: Path) -> tuple[list[str], dict]:
     return payload["eval_ids"], {key: payload.get(key) for key in keys}
 
 
-def atomic_json(output: Path, payload: dict) -> None:
-    output.parent.mkdir(parents=True, exist_ok=True)
-    temporary = None
-    try:
-        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=output.parent,
-                                         prefix=f".{output.name}.", suffix=".tmp", delete=False) as file:
-            temporary = Path(file.name)
-            file.write(json.dumps(payload, indent=2, default=str) + "\n")
-        os.replace(temporary, output)
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
-
-
 def export_eval(path: Path, timing_by_eval: dict, billing_by_sample: dict) -> list[dict]:
     log = read_eval_log(path)
     if not isinstance(log.eval.eval_id, str) or not isinstance(log.eval.model, str):
         raise ValueError("Invalid evaluation identity")
     rows = []
-    relative_parts = path.relative_to(LOG_DIR).parts
-    # Launchers write to <suite>/<run_id>/; any suite directory identifies its run.
-    launcher_run_id = relative_parts[1] if len(relative_parts) > 2 and relative_parts[1].isdigit() and 14 <= len(relative_parts[1]) <= 20 else None
+    relative_log = path.relative_to(LOG_DIR)
     for sample in log.samples or []:
         billing = billing_by_sample.get((log.eval.eval_id, sample.id))
         scores = {name: score.value for name, score in (sample.scores or {}).items()}
@@ -131,7 +111,7 @@ def export_eval(path: Path, timing_by_eval: dict, billing_by_sample: dict) -> li
         rows.append({
             "task": log.eval.task,
             "run_id": log.eval.run_id,
-            "launcher_run_id": launcher_run_id,
+            "launcher_run_id": launcher_run_id(relative_log),
             "eval_id": log.eval.eval_id,
             "sample_id": sample.id,
             "category": (sample.metadata or {}).get("category"),
@@ -152,19 +132,15 @@ def export_eval(path: Path, timing_by_eval: dict, billing_by_sample: dict) -> li
             "scores": scores,
             "score_metadata": score_metadata,
             "score_explanation": (sample.scores or {}).get("synthetic_ha_state").explanation if "synthetic_ha_state" in (sample.scores or {}) else None,
-            "passed": (
-                None if not scores or any(
-                    metadata.get("semantic_review_required") is True or metadata.get("semantic_review_status") == "pending"
-                    for metadata in score_metadata.values()
-                ) else all(passed(value) is True for value in scores.values())
-            ),
+            "passed": sample_outcome(scores.values(), score_metadata.values()),
+            "truncated": getattr(sample.output, "stop_reason", None) == "max_tokens",
             "latency_seconds": sample.total_time,
             "run_timing": timing_by_eval.get(log.eval.eval_id),
             "usage": usage,
             "tool_calls": sum(event.event == "tool" for event in sample.events),
             "model_calls": sum(event.event == "model" for event in sample.events),
             "started_at": sample.started_at,
-            "log_file": str(path.relative_to(LOG_DIR)),
+            "log_file": str(relative_log),
         })
     return rows
 
@@ -205,7 +181,8 @@ def main() -> None:
     if unbilled:
         warnings.append(f"Billing metadata unavailable for {unbilled} OpenRouter sample(s); exact cost is unknown.")
     output = LOG_DIR / "summary.json"
-    atomic_json(output, {"schema_version": 1, "rows": rows, "incomplete_report": bool(warnings), "warnings": warnings})
+    write_json_atomic(output, {"schema_version": 1, "rows": rows, "incomplete_report": bool(warnings), "warnings": warnings},
+                      indent=2, default=str)
     print(f"Wrote {len(rows)} rows to {output}")
 
 

@@ -1,9 +1,11 @@
-"""Run a frozen suite with a confirmed total generation ceiling."""
+"""Run every entry of a frozen plan in order, publishing progress and per-entry outcomes.
+
+A failed entry is recorded and later entries still run; the exit status is
+nonzero when any entry failed.
+"""
 
 import argparse
-from collections import Counter
 from datetime import datetime, timezone
-import json
 from pathlib import Path
 import subprocess
 import signal
@@ -14,144 +16,89 @@ sys.path.insert(0, str(ROOT))
 
 from inspect_ai.log import read_eval_log
 from scripts.bounded_process import run_bounded
-from scripts.execution_plan import ExecutionPlan, build_plan, load_plan, require_calls, run_id, save_plan
-from scripts.run_inspect_settings import prepare_provider
+from scripts.execution_plan import CHILD_TERMINATE_GRACE_SECONDS, PlanEntry, load_plan, require_calls, run_id
+from scripts.inspect_results import sample_outcome
+from scripts.json_files import write_json_atomic
+from scripts.run_inspect_settings import SOURCES, prepare_provider
+from suites import RunTarget
 
 
-LOG_DIRECTORIES = {"smoke": "selected", "laptop": "laptops", "ha": "ha"}
-
-
-def expected_samples(kind: str, case_id: str, plan: ExecutionPlan) -> Counter:
-    """Inspect sample IDs one suite entry must produce under the frozen plan."""
-    if kind == "smoke":
-        return Counter(case.id for _ in plan.variants for case in plan.smoke_cases)
-    if kind == "laptop":
-        return Counter(case.id for case in plan.laptop_cases)
-    return Counter([case_id])
-
-
-def case_score(kind: str, identifier: str, wanted: Counter) -> tuple[bool | None, int | None, str | None]:
-    """A corrupt or incomplete log is unavailable, never a fabricated score."""
-    directory = ROOT / "artifacts/inspect" / LOG_DIRECTORIES[kind] / identifier
-    samples = []
+def entry_score(entry: PlanEntry, identifier: str) -> tuple[bool | None, int | None, str | None]:
+    """Score one entry from its Inspect logs; a corrupt or incomplete log is unavailable, never guessed."""
     try:
-        paths = sorted(directory.glob("*.eval"))
+        paths = sorted(entry.suite.log_dir(identifier).glob("*.eval"))
         if not paths:
             return None, None, "Score unavailable: Inspect log is missing."
-        for path in paths:
-            samples.extend(sample for sample in (read_eval_log(path).samples or []) if sample.id in wanted)
-        if Counter(sample.id for sample in samples) != wanted:
+        wanted = entry.expected_samples
+        samples = [sample for path in paths for sample in (read_eval_log(path).samples or []) if sample.id in wanted]
+        if sorted(sample.id for sample in samples) != sorted(wanted.elements()):
             return None, None, "Score unavailable: Inspect sample IDs do not match the frozen plan."
         if any(not sample.scores for sample in samples):
             return None, None, "Score unavailable: an Inspect sample has no score."
-        values = [score.value for sample in samples for score in sample.scores.values()]
+        scores = [score for sample in samples for score in sample.scores.values()]
+        passed = sample_outcome((score.value for score in scores), (score.metadata or {} for score in scores))
         calls = sum(event.event == "model" for sample in samples for event in (sample.events or []))
-        return all(value in ("C", True, 1) for value in values), calls, None
+        return passed, calls, None
     except Exception as error:
         return None, None, f"Score unavailable: could not read Inspect artifact ({type(error).__name__})."
 
 
+def run_entry(entry: PlanEntry, target: RunTarget, identifier: str) -> dict:
+    """Run one child process and return its completed-case record."""
+    try:
+        return_code = run_bounded(entry.command(target), cwd=ROOT, check=False, timeout=entry.timeout_seconds,
+                                  terminate_grace=CHILD_TERMINATE_GRACE_SECONDS).returncode
+        message = None if return_code == 0 else f"{entry.label} could not complete (exit status {return_code})."
+    except subprocess.TimeoutExpired:
+        message = f"{entry.label} timed out; child process group terminated."
+    except OSError as error:
+        message = f"{entry.label} could not start ({type(error).__name__})."
+    if message:
+        return {"caseId": entry.id, "status": "failed", "message": message}
+    passed, calls, unavailable = entry_score(entry, identifier)
+    if unavailable:
+        return {"caseId": entry.id, "status": "complete", "message": unavailable, "scoreUnavailable": unavailable}
+    return {"caseId": entry.id, "status": "complete", "message": None, "passed": passed, "modelCalls": calls}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source", choices=("freetoken", "openrouter", "compatible"), required=True)
+    parser.add_argument("--source", choices=SOURCES, required=True)
     parser.add_argument("--model", required=True)
     parser.add_argument("--base-url", default="")
     parser.add_argument("--run-id", required=True)
-    parser.add_argument("--progress-file", required=True)
+    parser.add_argument("--progress-file", type=Path, required=True)
     parser.add_argument("--cap-usd", type=float)
     parser.add_argument("--max-calls", type=int, required=True)
-    parser.add_argument("--plan-file", type=Path)
+    parser.add_argument("--plan-file", type=Path, required=True)
     args = parser.parse_args()
     try:
         identifier = run_id(args.run_id)
         prepare_provider(args.source, args.model, base_url=args.base_url, cap_usd=args.cap_usd, discover=False)
-        plan = load_plan(args.plan_file) if args.plan_file else build_plan(suite=True)
-        if plan.variants != ("base",) or not plan.smoke_cases or not plan.ha_cases:
-            raise ValueError("Suite requires base smoke rows and at least one HA case.")
-        require_calls(plan, args.max_calls, scope="Suite")
+        plan = load_plan(args.plan_file)
+        require_calls(plan, args.max_calls, scope="Run")
     except (ValueError, OSError) as error:
         parser.error(str(error))
 
-    if args.plan_file is None:
-        frozen_path = ROOT / "artifacts/inspect/plans" / f"{identifier}.json"
-        frozen_path.parent.mkdir(parents=True, exist_ok=True)
-        if frozen_path.exists():
-            parser.error("Run ID already has a frozen plan; choose another run ID.")
-        save_plan(frozen_path, plan)
-    else:
-        frozen_path = args.plan_file
-    smoke_path = frozen_path.parent / f"{identifier}-smoke.json"
-    if plan.smoke_cases:
-        save_plan(smoke_path, ExecutionPlan(plan.variants, plan.smoke_cases, ()))
-    entries = []
-    if plan.smoke_cases:
-        entries.append(("smoke", "Pinned smoke set", "smoke"))
-    if plan.ha_cases:
-        entries.extend((case.id, case.name, "ha") for case in plan.ha_cases)
-    if plan.laptop_cases:
-        entries.append(("laptop", "Laptop shopping evaluation", "laptop"))
-    completed = []
+    target = RunTarget(args.source, args.model, identifier, args.plan_file, args.base_url, args.cap_usd,
+                       args.progress_file)
+    entries = plan.entries
+    completed: list[dict] = []
 
-    def update(phase: str, current: str | None, message: str) -> None:
-        data = {"phase": phase, "currentCaseId": current, "completedCases": completed,
-                "completedCount": len(completed), "totalCases": len(entries), "message": message,
-                "updatedAt": datetime.now(timezone.utc).isoformat()}
-        destination = Path(args.progress_file)
-        temporary = destination.with_suffix(".tmp")
-        temporary.write_text(json.dumps(data) + "\n")
-        temporary.replace(destination)
+    def publish(phase: str, current: str | None, message: str) -> None:
+        write_json_atomic(args.progress_file, {
+            "phase": phase, "currentCaseId": current, "completedCases": completed,
+            "completedCount": len(completed), "totalCases": len(entries), "message": message,
+            "updatedAt": datetime.now(timezone.utc).isoformat()})
 
-    failures = 0
-    update("preparing", None, "Preparing frozen suite")
-    for case_id, name, kind in entries:
-        update("running", case_id, f"Running {name}")
-        if kind == "smoke":
-            command = [sys.executable, str(ROOT / "scripts/run-inspect-selected.py"), "--source", args.source,
-                       "--model", args.model, "--variant", "base", "--max-calls", str(plan.smoke_calls),
-                       "--plan-file", str(smoke_path), "--run-id", identifier]
-            timeout = plan.smoke_calls * 125 + 60
-        elif kind == "laptop":
-            command = [sys.executable, str(ROOT / "scripts/run-inspect-laptop.py"),
-                       "--source", args.source, "--model", args.model, "--run-id", identifier,
-                       "--max-calls", str(plan.laptop_calls), "--plan-file", str(frozen_path),
-                       "--progress-file", args.progress_file]
-            timeout = plan.laptop_calls * 125 + 60
-        else:
-            case = plan.ha_case(case_id)
-            command = [sys.executable, str(ROOT / "scripts/run-inspect-ha-pilot.py"), "--case", case_id,
-                       "--source", args.source, "--model", args.model, "--run-id", identifier,
-                       "--max-calls", str(case["max_model_calls"]), "--plan-file", str(frozen_path),
-                       "--progress-file", args.progress_file]
-            timeout = 600
-        if args.base_url:
-            command.extend(["--base-url", args.base_url])
-        if args.source == "openrouter" and args.cap_usd is not None:
-            command.extend(["--cap-usd", str(args.cap_usd)])
-        try:
-            return_code = run_bounded(command, cwd=ROOT, check=False, timeout=timeout, terminate_grace=60).returncode
-            message = None if return_code == 0 else f"{name} could not complete (exit status {return_code})."
-        except subprocess.TimeoutExpired:
-            return_code = 124
-            message = f"{name} timed out; child process group terminated."
-        except OSError as error:
-            return_code = 127
-            message = f"{name} could not start ({type(error).__name__})."
-        state = "complete" if return_code == 0 else "failed"
-        if state == "failed":
-            failures += 1
-        item = {"caseId": case_id, "status": state, "message": message}
-        if state == "complete":
-            passed, calls, diagnostic = case_score(kind, identifier, expected_samples(kind, case_id, plan))
-            if diagnostic:
-                item["scoreUnavailable"] = diagnostic
-                item["message"] = diagnostic
-            else:
-                item.update({"passed": passed, "modelCalls": calls})
-        completed.append(item)
-        update("running", None if len(completed) == len(entries) else entries[len(completed)][0],
-               f"{len(completed)} of {len(entries)} cases finished")
-    update("exporting", None, "Exporting Inspect results")
-    return 1 if failures else 0
+    publish("preparing", None, "Preparing frozen plan")
+    for index, entry in enumerate(entries):
+        publish("running", entry.id, f"Running {entry.label}")
+        completed.append(run_entry(entry, target, identifier))
+        following = entries[index + 1].id if index + 1 < len(entries) else None
+        publish("running", following, f"{len(completed)} of {len(entries)} cases finished")
+    publish("exporting", None, "Exporting Inspect results")
+    return 1 if any(item["status"] == "failed" for item in completed) else 0
 
 
 def interrupt_worker(_signum, _frame):
