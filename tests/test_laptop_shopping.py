@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 import jsonschema
 
-from laptop_grader import (
+from suites.laptop_shopping.grader import (
     TASKS_PATH,
     CATALOG_PATH,
     build_prompt_for_case,

@@ -9,10 +9,12 @@ from __future__ import annotations
 import json
 import re
 import sys
+from functools import cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-ROOT = Path(__file__).resolve().parent
+from suites import ROOT
+
 CATALOG_PATH = ROOT / "fixtures" / "laptops" / "catalog.json"
 TASKS_PATH = ROOT / "tasks" / "laptop-shopping.json"
 
@@ -25,6 +27,11 @@ def load_catalog(path: Optional[Path] = None) -> List[Dict[str, Any]]:
 def load_tasks(path: Optional[Path] = None) -> List[Dict[str, Any]]:
     target = path or TASKS_PATH
     return json.loads(target.read_text(encoding="utf-8"))
+
+
+@cache
+def catalog_ids() -> frozenset[str]:
+    return frozenset(laptop["id"] for laptop in load_catalog())
 
 
 def build_prompt_for_case(case: Dict[str, Any], catalog: Optional[List[Dict[str, Any]]] = None) -> str:
@@ -59,7 +66,7 @@ def build_prompt_for_case(case: Dict[str, Any], catalog: Optional[List[Dict[str,
 
     return (
         "You are an expert personal computer purchasing consultant.\n\n"
-        "Here is the catalog of 10 available laptops:\n\n"
+        f"Here is the catalog of {len(catalog)} available laptops:\n\n"
         f"{catalog_text}\n\n"
         "----------------------------------------\n"
         "USER PERSONA AND USE CASE:\n"
@@ -68,7 +75,7 @@ def build_prompt_for_case(case: Dict[str, Any], catalog: Optional[List[Dict[str,
         "INSTRUCTIONS:\n"
         "1. Analyze the requirements of the persona against the specifications and features of all laptops in the catalog.\n"
         "2. If exactly one laptop uniquely best fits the user persona, choose its ID.\n"
-        "3. If ALL 10 laptops in the catalog satisfy the user's requirements, choose ALL.\n"
+        f"3. If ALL {len(catalog)} laptops in the catalog satisfy the user's requirements, choose ALL.\n"
         "4. If NONE of the laptops in the catalog can satisfy the requirements, choose NONE.\n"
         "5. Explain your reasoning briefly.\n"
         "6. Conclude your response on the final line with the exact format:\n"
@@ -126,18 +133,7 @@ def _normalize_id(text: str) -> Optional[str]:
     if normalized in {"none", "no_one", "neither", "no_laptop"}:
         return "NONE"
 
-    known_ids = {
-        "acer_aspire_16_a16_71m",
-        "apple_macbook_pro_14_m5_pro",
-        "framework_laptop_13_amd_ai300",
-        "apple_macbook_air_13_m5",
-        "gigabyte_gaming_a16_rtx5060",
-        "asus_chromebook_plus_cx34",
-        "asus_rog_zephyrus_g14",
-        "lenovo_yoga_7i_14",
-        "lenovo_yoga_pro_9i_16",
-        "asus_expertbook_p5_14",
-    }
+    known_ids = catalog_ids()
 
     if normalized in known_ids:
         return normalized
@@ -252,7 +248,7 @@ def grade_all(cases: List[Dict[str, Any]], responses: Dict[str, str]) -> Dict[st
 
 def main() -> None:
     if len(sys.argv) < 2:
-        print("Usage: python3 laptop_grader.py /path/to/responses.json")
+        print("Usage: python3 -m suites.laptop_shopping.grader /path/to/responses.json")
         sys.exit(1)
 
     responses_file = Path(sys.argv[1])

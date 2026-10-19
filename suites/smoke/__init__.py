@@ -23,7 +23,7 @@ class SmokeSuite(Suite):
         return self.make_case(row, name=row["id"].replace("_", " ").capitalize(), max_model_calls=1)
 
     def task(self, cases: tuple[Case, ...], variant: str):
-        from inspect_pilot import smoke
+        from suites.smoke.task import smoke
 
         return smoke(variant, rows=tuple(case.data for case in cases))
 

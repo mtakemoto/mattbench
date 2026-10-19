@@ -26,10 +26,10 @@ import aiohttp
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from inspect_ai import eval as run_eval
-from inspect_pilot import HA_STATE_READER, ha_matches
+from suites.smart_home.task import HA_STATE_READER, ha_matches
 from scripts.bounded_process import run_bounded
 from scripts.execution_plan import build_plan, load_plan, require_calls, run_id as run_id_value
 from scripts.json_files import write_json_atomic

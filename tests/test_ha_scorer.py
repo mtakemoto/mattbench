@@ -7,7 +7,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from inspect_pilot import ha_cases, synthetic_ha_state
+from suites.smart_home.task import ha_cases, synthetic_ha_state
 
 import test_ha_trace as traces
 
@@ -28,7 +28,7 @@ class HaScorerTests(unittest.IsolatedAsyncioTestCase):
                 with patch.dict(os.environ, {
                     "MATTBENCH_SYNTHETIC_HA_CONTAINER": "fictional-ha",
                     "MATTBENCH_SYNTHETIC_HA_TOKEN": "disposable-token",
-                }), patch("inspect_pilot.run_bounded_async", AsyncMock(side_effect=responses)):
+                }), patch("suites.smart_home.task.run_bounded_async", AsyncMock(side_effect=responses)):
                     score = await synthetic_ha_state(case)(SimpleNamespace(messages=messages), None)
                 self.assertEqual(score.value, value)
                 self.assertEqual(score.metadata["state_correct"], state_correct)

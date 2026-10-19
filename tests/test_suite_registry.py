@@ -82,10 +82,8 @@ class SuiteDiscoveryTests(unittest.TestCase):
             self.assertEqual(load_plan(frozen), plan)
 
 
-SUITE_SPECIFIC_FILES = {
-    # Task definitions and dedicated runners that belong to one suite. Prefer
-    # moving such code under suites/ over growing this list.
-    "inspect_pilot.py", "inspect_laptops.py", "laptop_grader.py", "inspect_pi.py", "smoke.py",
+LEGACY_FILES = {
+    "smoke.py",  # Promptfoo-era offline grader, kept as a historical baseline.
 }
 
 
@@ -94,7 +92,7 @@ class NoHardCodedSuiteTests(unittest.TestCase):
         suite_ids = set(suites.registry())
         offenders = []
         for path in [*ROOT.glob("*.py"), *ROOT.glob("scripts/*.py")]:
-            if path.name in SUITE_SPECIFIC_FILES:
+            if path.name in LEGACY_FILES:
                 continue
             for node in ast.walk(ast.parse(path.read_text(), str(path))):
                 if isinstance(node, ast.Constant) and node.value in suite_ids:

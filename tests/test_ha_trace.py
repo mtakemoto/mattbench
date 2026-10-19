@@ -6,7 +6,7 @@ import unittest
 from inspect_ai.model import ChatMessageAssistant, ChatMessageTool
 from inspect_ai.tool import ToolCall, ToolCallError
 
-from inspect_pilot import ha_cases, safe_ha_trace
+from suites.smart_home.task import ha_cases, safe_ha_trace
 
 
 COORDINATOR = "climate.north_room_coordinator"

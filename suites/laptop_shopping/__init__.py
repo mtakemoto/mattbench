@@ -21,7 +21,7 @@ class LaptopShoppingSuite(Suite):
         return self.make_case(row, name=row.get("title") or row["id"], max_model_calls=1)
 
     def task(self, cases: tuple[Case, ...], variant: str):
-        from inspect_laptops import laptop_shopping
+        from suites.laptop_shopping.task import laptop_shopping
 
         return laptop_shopping(cases=[case.data for case in cases])
 

@@ -8,7 +8,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from inspect_ai import eval as run_eval
-from inspect_pilot import coding, smoke
+from inspect_pilot import coding
+from suites.smoke.task import smoke
 from scripts.run_inspect_settings import local_settings, set_local_model_environment
 
 

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from inspect_ai import Task, task
@@ -11,9 +9,8 @@ from inspect_ai.dataset import Sample
 from inspect_ai.scorer import Score, Target, accuracy, scorer
 from inspect_ai.solver import TaskState, generate, system_message
 
-from laptop_grader import build_prompt_for_case, grade_case, load_catalog, load_tasks
+from suites.laptop_shopping.grader import build_prompt_for_case, grade_case, load_catalog, load_tasks
 
-ROOT = Path(__file__).resolve().parent
 
 
 @scorer(metrics=[accuracy()])

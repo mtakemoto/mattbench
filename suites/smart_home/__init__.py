@@ -1,9 +1,10 @@
 """Chained Home Assistant changes through real ha-mcp against a disposable Synthetic Home."""
 
 import sys
+from pathlib import Path
 from typing import Any
 
-from suites import ROOT, Case, RunTarget, Suite, require_text
+from suites import Case, RunTarget, Suite, require_text
 
 
 class SmartHomeSuite(Suite):
@@ -14,7 +15,7 @@ class SmartHomeSuite(Suite):
     position = 20
     isolated_cases = True
     case_deadline_seconds = 600
-    """Covers container setup, evaluation and teardown; see run-inspect-ha-pilot.py."""
+    """Covers container setup, evaluation and teardown; see runner.py."""
 
     def parse_row(self, row: dict[str, Any]) -> Case:
         case_id = require_text(row, "id", self.id)
@@ -40,7 +41,7 @@ class SmartHomeSuite(Suite):
         return self.make_case(row, name=row["name"], max_model_calls=row.get("max_model_calls"))
 
     def task(self, cases: tuple[Case, ...], variant: str):
-        from inspect_pilot import ha_case
+        from suites.smart_home.task import ha_case
 
         (case,) = cases
         return ha_case(case.id, case=case.data)
@@ -50,7 +51,7 @@ class SmartHomeSuite(Suite):
 
     def command(self, cases: tuple[Case, ...], target: RunTarget, model_calls: int) -> list[str]:
         (case,) = cases
-        return [sys.executable, str(ROOT / "scripts/run-inspect-ha-pilot.py"), "--case", case.id,
+        return [sys.executable, str(Path(__file__).with_name("runner.py")), "--case", case.id,
                 "--max-calls", str(model_calls), *target.arguments(),
                 *(["--progress-file", str(target.progress_file)] if target.progress_file else [])]
 
