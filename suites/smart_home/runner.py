@@ -30,6 +30,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from inspect_ai import eval as run_eval
 from suites.smart_home.task import HA_STATE_READER, ha_matches
+from scripts import case_progress
 from scripts.bounded_process import run_bounded
 from scripts.execution_plan import build_plan, load_plan, require_calls, run_id as run_id_value
 from scripts.json_files import write_json_atomic
@@ -200,7 +201,7 @@ def progress(path: str, case_id: str, message: str, phase: str = "running") -> N
         current = json.loads(destination.read_text())
     except (FileNotFoundError, json.JSONDecodeError):
         pass
-    current.update({"phase": phase, "currentCaseId": case_id, "message": message,
+    current.update({"phase": phase, "currentEntryId": case_id, "message": message,
                     "updatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
     write_json_atomic(destination, current)
 
@@ -343,6 +344,7 @@ def main() -> None:
                     else:
                         progress(args.progress_file, args.case, "Running model against the disposable Home Assistant")
                         print(f"Running {args.case} through real ha-mcp and disposable Synthetic Home", flush=True)
+                        case_progress.install()
                         logs = run_eval(
                             tasks=[SUITE.task(entry.cases, plan.variants[0])], model=model_name,
                             max_tokens=SUITE.max_tokens, task_retry_attempts=0,

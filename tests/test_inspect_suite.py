@@ -50,13 +50,13 @@ class InspectSuiteTests(unittest.TestCase):
 
         self.assertEqual(result, 1)
         self.assertEqual(len(commands), len(entries))
-        self.assertEqual([snapshot["currentCaseId"] for snapshot in snapshots], entries)
-        self.assertEqual(snapshots[2]["completedCases"][1], {"caseId": entries[1], "status": "failed",
-                                                             "message": snapshots[2]["completedCases"][1]["message"]})
+        self.assertEqual([snapshot["currentEntryId"] for snapshot in snapshots], entries)
+        self.assertEqual(snapshots[2]["completedEntries"][1], {"entryId": entries[1], "status": "failed",
+                                                             "message": snapshots[2]["completedEntries"][1]["message"]})
         self.assertEqual(final["phase"], "exporting")
-        self.assertIsNone(final["currentCaseId"])
-        self.assertEqual(final["completedCount"], final["totalCases"])
-        self.assertEqual([item["status"] for item in final["completedCases"]],
+        self.assertIsNone(final["currentEntryId"])
+        self.assertEqual(len(final["completedEntries"]), final["totalEntries"])
+        self.assertEqual([item["status"] for item in final["completedEntries"]],
                          ["complete", "failed", *["complete"] * (len(entries) - 2)])
 
     def test_each_entry_command_targets_its_own_suite_and_cases(self):
@@ -95,9 +95,9 @@ class InspectSuiteTests(unittest.TestCase):
         self.assertEqual(result, 1)
         self.assertEqual(len(calls), len(plan.entries))
         self.assertIn("--base-url", calls[0])
-        self.assertEqual([row["status"] for row in state["completedCases"]],
+        self.assertEqual([row["status"] for row in state["completedEntries"]],
                          ["failed", *["complete"] * (len(plan.entries) - 1)])
-        self.assertIn("could not start", state["completedCases"][0]["message"])
+        self.assertIn("could not start", state["completedEntries"][0]["message"])
 
     def test_each_entry_expects_one_sample_per_case_and_variant(self):
         for entry in build_plan().entries:

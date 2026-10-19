@@ -21,7 +21,7 @@ def job_record(identifier="20261011000000000001"):
     return {"id": identifier, "status": "running", "phase": "running", "pid": os.getpid(),
             "source": "compatible", "model": "offline", "variants": ["base"], "selection": [FIRST_SUITE],
             "startedAt": "2026-10-11T00:00:00+00:00", "updatedAt": "2026-10-11T00:00:00+00:00",
-            "completedCases": [], "completedCount": 0, "totalCases": 1, "message": "Running"}
+            "completedEntries": [], "totalEntries": 1, "message": "Running"}
 
 
 class WorkerOwnershipTests(unittest.TestCase):
@@ -45,8 +45,8 @@ class WorkerOwnershipTests(unittest.TestCase):
                 def run(command, **kwargs):
                     if "run-inspect-suite.py" in command[1]:
                         worker.atomic_json(directory / f"{job['id']}.progress.json", {
-                            "completedCases": [{"caseId": FIRST_SUITE, "status": "complete"}],
-                            "completedCount": 1, "totalCases": 1})
+                            "completedEntries": [{"entryId": FIRST_SUITE, "status": "complete"}],
+                            "totalEntries": 1})
                     if "inspect-report.py" in command[1]:
                         entered_export.set()
                         if not allow_completion.wait(5):
@@ -73,7 +73,7 @@ class WorkerOwnershipTests(unittest.TestCase):
                 self.assertEqual(child.exitcode, 0)
                 terminal = worker.reconcile(directory)
                 self.assertEqual((terminal["status"], terminal["phase"]), ("complete", "complete"))
-                self.assertEqual(terminal["completedCount"], 1)
+                self.assertEqual(len(terminal["completedEntries"]), 1)
             finally:
                 allow_completion.set()
                 if child.is_alive():
@@ -119,12 +119,15 @@ class WorkerOwnershipTests(unittest.TestCase):
 
 class WorkerCommandTests(unittest.TestCase):
     def test_legacy_single_selection_job_is_normalized(self):
-        legacy = {**job_record(), "status": "complete", "phase": "complete", "caseId": "all", "variant": "both"}
-        del legacy["selection"], legacy["variants"]
+        legacy = {**job_record(), "status": "complete", "phase": "complete", "caseId": "all", "variant": "both",
+                  "completedCases": [{"caseId": "smoke", "status": "complete"}], "completedCount": 1, "totalCases": 4}
+        for field in ("selection", "variants", "completedEntries", "totalEntries"):
+            del legacy[field]
         with tempfile.TemporaryDirectory() as temporary:
             worker.atomic_json(Path(temporary) / "job.json", legacy)
             job = worker.read_job(Path(temporary))
         self.assertEqual((job["selection"], job["variants"]), (["all"], ["base", "careful"]))
+        self.assertEqual((job["completedEntries"], job["totalEntries"]), ([{"status": "complete", "entryId": "smoke"}], 4))
 
     def test_every_selection_runs_through_the_suite_orchestrator_with_plan_deadline(self):
         plan = build_plan()
@@ -147,3 +150,89 @@ class WorkerCommandTests(unittest.TestCase):
             paid_command, _ = worker.command({**settings, "model": "z-ai/glm-5.3-flash", "capUsd": 20}, Path(temporary))
             self.assertIn("--cap-usd", paid_command)
             self.assertIn("20", paid_command)
+
+
+class LiveStatusTests(unittest.TestCase):
+    def write_running_job(self, directory, plan):
+        job = job_record()
+        worker.atomic_json(directory / "job.json", job)
+        save_plan(directory / f"{job['id']}.plan.json", plan)
+        return job
+
+    def test_cases_merge_hook_records_and_mark_failed_entries_as_errors(self):
+        plan = build_plan()
+        first, second = plan.entries[0], plan.entries[1]
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            job = self.write_running_job(directory, plan)
+            worker.atomic_json(directory / f"{job['id']}.cases.{first.id}.json", {
+                f"base/{first.cases[0].id}": {"state": "pass", "calls": 1},
+                f"base/{first.cases[-1].id}": {"state": "running"}})
+            worker.atomic_json(directory / f"{job['id']}.progress.json", {
+                "completedEntries": [{"entryId": second.id, "status": "failed"}], "totalEntries": len(plan.entries)})
+            lock = worker.acquire_lock(directory)  # a live worker holds the lock
+            try:
+                cases = {case["id"]: case for case in worker.status(directory)["cases"]}
+            finally:
+                lock.close()
+            self.assertEqual(len(cases), len(plan.cases))
+            self.assertEqual((cases[first.cases[0].id]["state"], cases[first.cases[0].id]["calls"]), ("pass", 1))
+            if len(first.cases) > 1:
+                self.assertEqual(cases[first.cases[-1].id]["state"], "running")
+            self.assertTrue(all(cases[case.id]["state"] == "error" for case in second.cases))
+            self.assertTrue(all(cases[case.id]["state"] == "queued" for case in plan.entries[-1].cases))
+
+            # Once the worker is gone, unfinished cases are reported as not run.
+            finished = worker.status(directory)
+            self.assertEqual(finished["status"], "interrupted")
+            self.assertIn("not_run", {case["state"] for case in finished["cases"]})
+
+    def test_cancel_signals_only_a_live_worker(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            with self.assertRaisesRegex(ValueError, "No benchmark is running"):
+                worker.cancel(directory)
+            job = self.write_running_job(directory, build_plan([FIRST_SUITE]))
+            lock = worker.acquire_lock(directory)
+            try:
+                with patch.object(worker.os, "killpg") as kill:
+                    worker.cancel(directory)
+                kill.assert_called_once_with(job["pid"], worker.signal.SIGTERM)
+                self.assertTrue((directory / f"{job['id']}.cancel").exists())
+            finally:
+                lock.close()
+            with patch.object(worker.os, "killpg") as kill:
+                self.assertEqual(worker.cancel(directory)["status"], "interrupted")
+            kill.assert_not_called()
+
+    def test_cancelled_run_still_exports_finished_cases(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            directory = root / "web"
+            plan = build_plan([FIRST_SUITE])
+            job = self.write_running_job(directory, plan)
+            worker.atomic_json(directory / f"{job['id']}.request.json", {
+                "runId": job["id"], "source": "compatible", "model": "offline", "maxCalls": plan.max_calls,
+                "baseUrl": "http://127.0.0.1:9/v1", "capUsd": None})
+            (directory / f"{job['id']}.cancel").touch()
+            commands = []
+
+            def run(command, **_kwargs):
+                commands.append(command[1])
+                if command[1].endswith("run-inspect-suite.py"):
+                    raise KeyboardInterrupt
+                worker.atomic_json(root / "artifacts/inspect/summary.json", {"rows": [], "warnings": []})
+                return subprocess.CompletedProcess(command, 0)
+
+            ready_read, ready_write = os.pipe()
+            os.write(ready_write, b"1")
+            os.close(ready_write)
+            lock = worker.acquire_lock(directory)
+            with patch.object(worker, "ROOT", root), patch.object(worker, "run_bounded", run), \
+                    patch.object(worker.signal, "signal"):
+                self.assertEqual(worker.work(job["id"], directory, os.dup(lock.fileno()), ready_read), 1)
+            lock.close()
+            final = worker.read_job(directory)
+        self.assertTrue(commands[-1].endswith("inspect-report.py"))
+        self.assertEqual(final["status"], "interrupted")
+        self.assertIn("cancelled", final["message"])

@@ -5,6 +5,7 @@ nonzero when any entry failed.
 """
 
 import argparse
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 import subprocess
@@ -16,6 +17,7 @@ sys.path.insert(0, str(ROOT))
 
 from inspect_ai.log import read_eval_log
 from scripts.bounded_process import run_bounded
+from scripts.case_progress import CASE_PROGRESS_ENV, case_progress_file
 from scripts.execution_plan import CHILD_TERMINATE_GRACE_SECONDS, PlanEntry, load_plan, require_calls, run_id
 from scripts.inspect_results import sample_outcome
 from scripts.json_files import write_json_atomic
@@ -46,19 +48,20 @@ def entry_score(entry: PlanEntry, identifier: str) -> tuple[bool | None, int | N
 def run_entry(entry: PlanEntry, target: RunTarget, identifier: str) -> dict:
     """Run one child process and return its completed-case record."""
     try:
+        environment = {**os.environ, CASE_PROGRESS_ENV: str(case_progress_file(target.progress_file, entry.id))}
         return_code = run_bounded(entry.command(target), cwd=ROOT, check=False, timeout=entry.timeout_seconds,
-                                  terminate_grace=CHILD_TERMINATE_GRACE_SECONDS).returncode
+                                  terminate_grace=CHILD_TERMINATE_GRACE_SECONDS, env=environment).returncode
         message = None if return_code == 0 else f"{entry.label} could not complete (exit status {return_code})."
     except subprocess.TimeoutExpired:
         message = f"{entry.label} timed out; child process group terminated."
     except OSError as error:
         message = f"{entry.label} could not start ({type(error).__name__})."
     if message:
-        return {"caseId": entry.id, "status": "failed", "message": message}
+        return {"entryId": entry.id, "status": "failed", "message": message}
     passed, calls, unavailable = entry_score(entry, identifier)
     if unavailable:
-        return {"caseId": entry.id, "status": "complete", "message": unavailable, "scoreUnavailable": unavailable}
-    return {"caseId": entry.id, "status": "complete", "message": None, "passed": passed, "modelCalls": calls}
+        return {"entryId": entry.id, "status": "complete", "message": unavailable, "scoreUnavailable": unavailable}
+    return {"entryId": entry.id, "status": "complete", "message": None, "passed": passed, "modelCalls": calls}
 
 
 def main() -> int:
@@ -87,8 +90,8 @@ def main() -> int:
 
     def publish(phase: str, current: str | None, message: str) -> None:
         write_json_atomic(args.progress_file, {
-            "phase": phase, "currentCaseId": current, "completedCases": completed,
-            "completedCount": len(completed), "totalCases": len(entries), "message": message,
+            "phase": phase, "currentEntryId": current, "completedEntries": completed,
+            "totalEntries": len(entries), "message": message,
             "updatedAt": datetime.now(timezone.utc).isoformat()})
 
     publish("preparing", None, "Preparing frozen plan")
@@ -96,7 +99,7 @@ def main() -> int:
         publish("running", entry.id, f"Running {entry.label}")
         completed.append(run_entry(entry, target, identifier))
         following = entries[index + 1].id if index + 1 < len(entries) else None
-        publish("running", following, f"{len(completed)} of {len(entries)} cases finished")
+        publish("running", following, f"Finished {entry.label}")
     publish("exporting", None, "Exporting Inspect results")
     return 1 if any(item["status"] == "failed" for item in completed) else 0
 

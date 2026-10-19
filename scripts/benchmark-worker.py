@@ -12,6 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from scripts.bounded_process import run_bounded
+from scripts.case_progress import FINISHED_STATES, case_key, read_case_records
 from scripts.execution_plan import load_plan, validate_request
 from scripts.json_files import write_json_atomic
 from scripts.run_inspect_settings import read_env_file
@@ -26,16 +27,32 @@ def atomic_json(path: Path, value: dict) -> None:
     write_json_atomic(path, value, allow_nan=False)
 
 
+PROGRESS_FIELDS = ("currentEntryId", "completedEntries", "totalEntries", "message")
+"""Orchestrator fields that refine a running job; billing, export and identity stay worker-owned."""
+
+
+def upgrade_legacy_job(job: dict) -> dict:
+    """Jobs written before suite discovery stored one selection, one variant and 'case' counters for entries."""
+    if "caseId" in job:
+        job["selection"] = [job.pop("caseId")]
+        variant = job.pop("variant", "base")
+        job["variants"] = ["base", "careful"] if variant == "both" else [variant]
+    if "totalCases" in job:
+        job["totalEntries"] = job.pop("totalCases")
+        job["completedEntries"] = [{**{k: v for k, v in entry.items() if k != "caseId"}, "entryId": entry.get("caseId")}
+                                   for entry in job.pop("completedCases", [])]
+        job["currentEntryId"] = job.pop("currentCaseId", None)
+        job.pop("completedCount", None)
+    return job
+
+
 def read_job(directory: Path) -> dict | None:
     path = directory / "job.json"
     if not path.exists():
         return None
     job = json.loads(path.read_text())
-    if isinstance(job, dict) and "caseId" in job:
-        # Jobs written before suite discovery stored one selection and one variant.
-        job["selection"] = [job.pop("caseId")]
-        variant = job.pop("variant", "base")
-        job["variants"] = ["base", "careful"] if variant == "both" else [variant]
+    if isinstance(job, dict):
+        job = upgrade_legacy_job(job)
     if not isinstance(job, dict) or not isinstance(job.get("id"), str) or job.get("status") not in {"running", "complete", "failed", "interrupted"}:
         raise ValueError("Invalid persisted benchmark job.")
     return job
@@ -92,8 +109,8 @@ def start_job(payload: dict, directory: Path) -> dict:
         timestamp = now()
         job = {"id": job_id, "status": "running", "phase": "validating", "source": settings["source"],
                "model": settings["model"], "variants": settings["variants"], "selection": settings["selection"],
-               "startedAt": timestamp, "updatedAt": timestamp, "completedCases": [], "completedCount": 0,
-               "totalCases": len(plan.entries), "message": "Validating frozen execution plan"}
+               "startedAt": timestamp, "updatedAt": timestamp, "completedEntries": [],
+               "totalEntries": len(plan.entries), "message": "Validating frozen execution plan"}
         atomic_json(directory / f"{job_id}.plan.json", plan.to_dict())
         atomic_json(directory / f"{job_id}.request.json", settings)
         atomic_json(directory / "job.json", job)
@@ -144,16 +161,85 @@ def command(settings: dict, directory: Path) -> tuple[list[str], float]:
     return [sys.executable, str(ROOT / "scripts/run-inspect-suite.py"), *arguments], load_plan(plan_file).deadline_seconds
 
 
-def merge_progress(directory: Path, job_id: str) -> None:
-    path = directory / f"{job_id}.progress.json"
-    if not path.exists():
-        return
+def read_progress(directory: Path, job_id: str) -> dict:
     try:
-        progress = json.loads(path.read_text())
-        fields = {key: progress[key] for key in ("currentCaseId", "completedCases", "completedCount", "totalCases") if key in progress}
+        progress = json.loads((directory / f"{job_id}.progress.json").read_text())
+    except (OSError, ValueError):
+        return {}
+    return {key: progress[key] for key in PROGRESS_FIELDS if isinstance(progress, dict) and key in progress}
+
+
+def merge_progress(directory: Path, job_id: str) -> None:
+    fields = read_progress(directory, job_id)
+    if fields:
         update_job(directory, job_id, **fields)
-    except (ValueError, OSError):
-        print("Warning: progress artifact unavailable; retaining durable worker state.", flush=True)
+
+
+def job_cases(directory: Path, job: dict) -> list[dict]:
+    """Every case of the frozen plan with its live state: queued, running, pass, fail, unscored, error or not_run."""
+    try:
+        plan = load_plan(directory / f"{job['id']}.plan.json")
+    except ValueError:
+        return []
+    records = read_case_records(directory, job["id"])
+    failed_entries = {entry.get("entryId") for entry in job.get("completedEntries", []) if entry.get("status") == "failed"}
+    cases = []
+    for entry in plan.entries:
+        for variant in plan.variants:
+            for case in entry.cases:
+                record = records.get(case_key(variant, case.id), {})
+                state = record.get("state", "queued")
+                if state not in FINISHED_STATES:
+                    state = "error" if entry.id in failed_entries else state if job["status"] == "running" else "not_run"
+                cases.append({"id": case.id, "suite": case.suite, "variant": variant, "state": state,
+                              **{key: record[key] for key in ("truncated", "calls", "explanation") if key in record}})
+    return cases
+
+
+def status(directory: Path) -> dict | None:
+    """The job as the console shows it: live orchestrator progress and per-case states merged in."""
+    job = reconcile(directory)
+    if not job:
+        return None
+    if job["status"] == "running" and job["phase"] in ("validating", "running"):
+        job.update(read_progress(directory, job["id"]))
+    job["cases"] = job_cases(directory, job)
+    return job
+
+
+def cancel(directory: Path) -> dict | None:
+    """Ask the running worker to stop; it keeps finished cases and still publishes billing and results."""
+    job = read_job(directory)
+    if not job or job["status"] != "running":
+        raise ValueError("No benchmark is running.")
+    try:
+        lock = acquire_lock(directory)
+    except ValueError:
+        pass  # The worker is alive: it holds the lock for its whole lifecycle.
+    else:
+        lock.close()
+        return status(directory)
+    (directory / f"{job['id']}.cancel").touch()
+    if job.get("pid"):
+        os.killpg(job["pid"], signal.SIGTERM)
+    return status(directory)
+
+
+def collect_billing(directory: Path, job_id: str) -> bool:
+    update_job(directory, job_id, phase="billing", message="Reading billed OpenRouter cost")
+    try:
+        result = run_bounded([sys.executable, str(ROOT / "scripts/openrouter-billing.py"), "--run-id", job_id], timeout=120, cwd=ROOT)
+        return result.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def export_results(directory: Path, job_id: str) -> tuple[bool, bool]:
+    """Publish the summary; returns (exported, summary has warnings)."""
+    update_job(directory, job_id, phase="exporting", message="Publishing Inspect results")
+    if run_bounded([sys.executable, str(ROOT / "scripts/inspect-report.py")], timeout=180, cwd=ROOT).returncode:
+        return False, False
+    return True, bool(json.loads((ROOT / "artifacts/inspect/summary.json").read_text()).get("warnings"))
 
 
 def work(job_id: str, directory: Path, lock_fd: int, ready_fd: int) -> int:
@@ -164,40 +250,37 @@ def work(job_id: str, directory: Path, lock_fd: int, ready_fd: int) -> int:
     finally:
         os.close(ready_fd)
     settings = json.loads((directory / f"{job_id}.request.json").read_text())
+
     def interrupt(_signum, _frame):
         raise KeyboardInterrupt
     signal.signal(signal.SIGTERM, interrupt)
     try:
         args, budget = command(settings, directory)
         update_job(directory, job_id, phase="running", message="Running frozen benchmark selection")
-        result = run_bounded(args, timeout=budget, cwd=ROOT, terminate_grace=60)
+        stopped = None
+        try:
+            evaluated = run_bounded(args, timeout=budget, cwd=ROOT, terminate_grace=60).returncode == 0
+        except (KeyboardInterrupt, subprocess.TimeoutExpired) as error:
+            evaluated = False
+            cancelled = isinstance(error, KeyboardInterrupt) and (directory / f"{job_id}.cancel").exists()
+            stopped = "Run cancelled; finished cases were kept." if cancelled else \
+                "Worker interrupted or exceeded its deadline; owned child cleanup was attempted."
+        # Billing and export are short and bounded; finish them so paid calls and finished cases are recorded.
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
         merge_progress(directory, job_id)
-        billing_ok = True
-        if settings["source"] == "openrouter":
-            update_job(directory, job_id, phase="billing", message="Reading billed OpenRouter cost")
-            try:
-                billing = run_bounded([sys.executable, str(ROOT / "scripts/openrouter-billing.py"), "--run-id", job_id], timeout=120, cwd=ROOT)
-                billing_ok = billing.returncode == 0
-            except (OSError, subprocess.TimeoutExpired):
-                billing_ok = False
-        update_job(directory, job_id, phase="exporting", message="Publishing Inspect results")
-        export = run_bounded([sys.executable, str(ROOT / "scripts/inspect-report.py")], timeout=180, cwd=ROOT)
-        ok = result.returncode == 0 and export.returncode == 0
-        warning = ""
-        if export.returncode == 0:
-            summary = json.loads((ROOT / "artifacts/inspect/summary.json").read_text())
-            if summary.get("warnings"):
-                warning = " Report is incomplete; inspect artifact warnings."
-        update_job(directory, job_id, status="complete" if ok else "failed",
-                   phase="complete" if ok else "failed", finishedAt=now(), pid=None,
-                   message=(("Run and export complete." if billing_ok else "Run complete; billed cost is incomplete.") if ok else
-                            "Run or export failed; see the ignored local run log.") + warning)
+        billed = collect_billing(directory, job_id) if settings["source"] == "openrouter" else True
+        exported, has_warnings = export_results(directory, job_id)
+        ok = evaluated and exported
+        if stopped:
+            final, message = "interrupted", stopped
+        elif ok:
+            final, message = "complete", "Run and export complete." if billed else "Run complete; billed cost is incomplete."
+        else:
+            final, message = "failed", "Run or export failed; see the ignored local run log."
+        if has_warnings:
+            message += " Some report artifacts have warnings."
+        update_job(directory, job_id, status=final, phase=final, finishedAt=now(), pid=None, message=message)
         return 0 if ok else 1
-    except (KeyboardInterrupt, subprocess.TimeoutExpired):
-        merge_progress(directory, job_id)
-        update_job(directory, job_id, status="interrupted", phase="interrupted", finishedAt=now(), pid=None,
-                   message="Worker interrupted or exceeded its deadline; owned child cleanup was attempted.")
-        return 1
     except Exception:
         update_job(directory, job_id, status="failed", phase="failed", finishedAt=now(), pid=None,
                    message="Benchmark worker failed; see the ignored local run log.")
@@ -211,6 +294,7 @@ def main() -> int:
     parser.add_argument("--directory", type=Path, default=ROOT / "artifacts/web")
     parser.add_argument("--start", action="store_true")
     parser.add_argument("--status", action="store_true")
+    parser.add_argument("--cancel", action="store_true")
     parser.add_argument("--work")
     parser.add_argument("--lock-fd", type=int)
     parser.add_argument("--ready-fd", type=int)
@@ -221,9 +305,11 @@ def main() -> int:
         if args.start:
             result = start_job(json.load(sys.stdin), args.directory)
         elif args.status:
-            result = reconcile(args.directory)
+            result = status(args.directory)
+        elif args.cancel:
+            result = cancel(args.directory)
         else:
-            parser.error("Choose --start or --status.")
+            parser.error("Choose --start, --status or --cancel.")
         print(json.dumps(result, allow_nan=False))
         return 0
     except (ValueError, OSError) as error:

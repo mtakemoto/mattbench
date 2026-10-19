@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from inspect_ai import eval_set
+from scripts import case_progress
 from scripts.execution_plan import load_plan, require_calls, run_id
 from scripts.run_inspect_settings import GENERATION, SOURCES, prepare_provider
 
@@ -38,6 +39,7 @@ def main() -> None:
     except (ValueError, OSError) as error:
         parser.error(str(error))
 
+    case_progress.install()
     print(f"Running {entry.label} on {args.source}/{args.model}, {entry.model_calls} calls maximum", flush=True)
     success, logs = eval_set(
         tasks=[entry.suite.task(entry.cases, variant) for variant in plan.variants],

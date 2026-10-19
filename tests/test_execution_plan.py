@@ -233,8 +233,8 @@ class ExecutionPlanTests(unittest.TestCase):
                 self.assertEqual(suite.main(), 0)
             progress = json.loads((directory / "progress.json").read_text())
             self.assertEqual(len(commands), len(plan.entries))
-            self.assertIn("Score unavailable", progress["completedCases"][0]["scoreUnavailable"])
-            self.assertTrue(all(row["status"] == "complete" for row in progress["completedCases"]))
+            self.assertIn("Score unavailable", progress["completedEntries"][0]["scoreUnavailable"])
+            self.assertTrue(all(row["status"] == "complete" for row in progress["completedEntries"]))
 
 
 if __name__ == "__main__":
