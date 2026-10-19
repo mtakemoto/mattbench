@@ -9,8 +9,8 @@ Given a JSON input list of 10 laptop specifications with pictures and a user per
 - **Catalog schema**: [`fixtures/laptops/schema.json`](../fixtures/laptops/schema.json)
 - **Laptop catalog**: [`fixtures/laptops/catalog.json`](../fixtures/laptops/catalog.json)
 - **Task definitions**: [`tasks/laptop-shopping.json`](../tasks/laptop-shopping.json)
-- **Offline grader & prompt builder**: [`laptop_grader.py`](../laptop_grader.py)
-- **Inspect AI runner**: [`inspect_laptops.py`](../inspect_laptops.py)
+- **Offline grader & prompt builder**: [`suites/laptop_shopping/grader.py`](../suites/laptop_shopping/grader.py)
+- **Inspect AI task**: [`suites/laptop_shopping/task.py`](../suites/laptop_shopping/task.py)
 - **Unit tests**: [`tests/test_laptop_shopping.py`](../tests/test_laptop_shopping.py)
 
 ---
@@ -76,5 +76,5 @@ Run the test suite:
 
 Run offline grading against model responses:
 ```bash
-.venv/bin/python laptop_grader.py /path/to/responses.json
+.venv/bin/python -m suites.laptop_shopping.grader /path/to/responses.json
 ```
