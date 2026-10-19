@@ -1,14 +1,19 @@
-export type Source = 'freetoken' | 'openrouter' | 'compatible';
-export type Variant = 'base' | 'careful' | 'both';
+/** Model sources; mirrors SOURCES in scripts/run_inspect_settings.py. */
+export const SOURCES = ['freetoken', 'openrouter', 'compatible'] as const;
+export type Source = (typeof SOURCES)[number];
+export function isSource(value: unknown): value is Source { return SOURCES.includes(value as Source); }
+/** Selection token that runs every registered suite. */
+export const SELECT_ALL = 'all';
 export type ModelOption = { id: string; name: string; contextLength?: number; promptPrice?: string; completionPrice?: string };
-export type BenchmarkCase = { id: string; name: string; category: string; suite: 'smoke' | 'ha' | 'laptop'; fixture: string; maxModelCalls: number };
+export type BenchmarkCase = { id: string; name: string; suite: string; maxModelCalls: number };
+/** A registered benchmark suite, described by scripts/console_bridge.py from suites/. */
+export type Suite = { id: string; label: string; description: string; variants: string[]; isolatedCases: boolean; cases: BenchmarkCase[] };
 export type RunTiming = { setup_seconds?: number; evaluation_seconds?: number; teardown_seconds?: number; total_wall_seconds?: number };
-export type CaseTiming = RunTiming & { case_id: string; status: string };
 export type Billing = { complete: boolean; cost_usd: number | null; partial_cost_usd: number | null; generation_attempts?: number; unknown_attempts?: number; lookup_failures?: number };
 export type Row = {
   task: string; run_id: string; launcher_run_id?: string | null; sample_id: string; category?: string;
   prompt_variant: string; status: string; model: string; concrete_response_model?: string | null;
-  routed_models?: string[]; providers?: string[]; passed: boolean | null; billing?: Billing | null;
+  routed_models?: string[]; providers?: string[]; passed: boolean | null; truncated?: boolean; billing?: Billing | null;
   score_explanation?: string | null; score_metadata?: Record<string, { state_correct?: boolean; trace_valid?: boolean; semantic_review_required?: boolean }>;
   latency_seconds?: number; model_calls?: number; tool_calls?: number;
   usage?: Record<string, { total_tokens?: number; total_cost?: number | null }>;
@@ -18,12 +23,12 @@ export type Row = {
 export type CaseResult = { caseId: string; status: 'complete' | 'failed'; passed?: boolean | null; modelCalls?: number; message?: string | null };
 export type Job = {
   id: string; status: 'running' | 'complete' | 'failed' | 'interrupted'; source: Source; model: string;
-  variant: Variant; caseId: string; startedAt: string; updatedAt: string; finishedAt?: string; pid?: number | null;
+  variants: string[]; selection: string[]; startedAt: string; updatedAt: string; finishedAt?: string; pid?: number | null;
   phase: 'validating' | 'preparing' | 'running' | 'billing' | 'exporting' | 'complete' | 'failed' | 'interrupted';
   currentCaseId?: string | null; completedCases: CaseResult[]; completedCount: number; totalCases: number; message: string; error?: string;
 };
-export type RunInput = { source: Source; model: string; variant: Variant; caseId: string; baseUrl?: string; maxCalls: number; capUsd?: number; capConfirmed?: boolean };
-export type History = { revision: string; rows: Row[]; runTimings: CaseTiming[]; warnings: string[] };
+export type RunInput = { source: Source; model: string; variants: string[]; selection: string[]; baseUrl?: string; maxCalls: number; capUsd?: number; capConfirmed?: boolean };
+export type History = { revision: string; rows: Row[]; warnings: string[] };
 export type Overview = { job: Job | null; revision: string };
 
 export function object(value: unknown, label: string): Record<string, unknown> {
@@ -33,13 +38,13 @@ export function object(value: unknown, label: string): Record<string, unknown> {
 function strings(value: Record<string, unknown>, fields: string[], label: string) {
   for (const key of fields) if (typeof value[key] !== 'string') throw new Error(`${label}.${key} must be a string.`);
 }
+function stringList(value: unknown): value is string[] { return Array.isArray(value) && value.every((entry) => typeof entry === 'string'); }
 function nonnegative(value: unknown): value is number { return typeof value === 'number' && Number.isFinite(value) && value >= 0; }
 export function parseJob(value: unknown): Job | null {
   if (value === null) return null;
   const job = object(value, 'Job');
-  strings(job, ['id', 'source', 'model', 'variant', 'caseId', 'startedAt', 'updatedAt', 'message'], 'Job');
-  if (!/^\d{14,20}$/.test(String(job.id)) || !['freetoken', 'openrouter', 'compatible'].includes(String(job.source)) ||
-      !['base', 'careful', 'both'].includes(String(job.variant)) ||
+  strings(job, ['id', 'source', 'model', 'startedAt', 'updatedAt', 'message'], 'Job');
+  if (!/^\d{14,20}$/.test(String(job.id)) || !isSource(job.source) || !stringList(job.variants) || !stringList(job.selection) ||
       !['running', 'complete', 'failed', 'interrupted'].includes(String(job.status)) ||
       !['validating', 'preparing', 'running', 'billing', 'exporting', 'complete', 'failed', 'interrupted'].includes(String(job.phase)) ||
       !Number.isInteger(job.completedCount) || !Number.isInteger(job.totalCases) || Number(job.completedCount) < 0 || Number(job.totalCases) < Number(job.completedCount) ||
@@ -52,11 +57,19 @@ export function parseJob(value: unknown): Job | null {
   }
   return job as unknown as Job;
 }
-export function parseCase(value: unknown): BenchmarkCase {
-  const entry = object(value, 'Case');
-  strings(entry, ['id', 'name', 'category', 'suite', 'fixture'], 'Case');
-  if (!['smoke', 'ha', 'laptop'].includes(String(entry.suite)) || !Number.isInteger(entry.maxModelCalls) || Number(entry.maxModelCalls) < 1) throw new Error('Invalid case call ceiling.');
-  return entry as unknown as BenchmarkCase;
+export function parseSuite(value: unknown): Suite {
+  const suite = object(value, 'Suite');
+  strings(suite, ['id', 'label', 'description'], 'Suite');
+  if (!stringList(suite.variants) || !suite.variants.length || typeof suite.isolatedCases !== 'boolean' || !Array.isArray(suite.cases)) {
+    throw new Error(`Suite ${suite.id} has an invalid contract.`);
+  }
+  const cases = suite.cases.map((entry) => {
+    const item = object(entry, 'Case');
+    strings(item, ['id', 'name'], 'Case');
+    if (!Number.isInteger(item.maxModelCalls) || Number(item.maxModelCalls) < 1) throw new Error('Invalid case call ceiling.');
+    return { id: item.id, name: item.name, maxModelCalls: item.maxModelCalls, suite: suite.id } as BenchmarkCase;
+  });
+  return { ...(suite as unknown as Suite), cases };
 }
 export function parseRow(value: unknown): Row {
   const row = object(value, 'Summary row');
@@ -87,14 +100,6 @@ export function parseRow(value: unknown): Row {
   }
   return row as unknown as Row;
 }
-export function parseTiming(value: unknown): CaseTiming {
-  const timing = object(value, 'Timing');
-  strings(timing, ['case_id', 'status'], 'Timing');
-  for (const key of ['setup_seconds', 'evaluation_seconds', 'teardown_seconds', 'total_wall_seconds']) {
-    if (timing[key] != null && !nonnegative(timing[key])) throw new Error(`Timing.${key} must be nonnegative.`);
-  }
-  return timing as unknown as CaseTiming;
-}
 export function parseOverview(value: unknown): Overview {
   const overview = object(value, 'Overview');
   if (typeof overview.revision !== 'string') throw new Error('Overview revision is missing.');
@@ -102,7 +107,7 @@ export function parseOverview(value: unknown): Overview {
 }
 export function parseHistory(value: unknown): History {
   const history = object(value, 'History');
-  if (typeof history.revision !== 'string' || !Array.isArray(history.rows) || !Array.isArray(history.runTimings) ||
+  if (typeof history.revision !== 'string' || !Array.isArray(history.rows) ||
       !Array.isArray(history.warnings) || history.warnings.some((warning) => typeof warning !== 'string')) throw new Error('Invalid history response.');
-  return { revision: history.revision, rows: history.rows.map(parseRow), runTimings: history.runTimings.map(parseTiming), warnings: history.warnings as string[] };
+  return { revision: history.revision, rows: history.rows.map(parseRow), warnings: history.warnings as string[] };
 }

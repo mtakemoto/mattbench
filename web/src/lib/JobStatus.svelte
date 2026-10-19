@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Job } from './contracts';
+  import { caseResultLabel } from './format';
   let { job, resultsCount, passedCount, taskName, refresh }: {
     job: Job; resultsCount: number; passedCount: number;
     taskName: (id: string) => string; refresh: () => void;
@@ -24,7 +25,7 @@
       <span class="case-status-list">
         {#each job.completedCases as done (done.caseId)}
           <span class:failed={done.status === 'failed' || done.passed === false}>
-            {done.status === 'failed' ? 'ERROR' : done.passed === true ? 'PASS' : done.passed === false ? 'FAIL' : 'DONE'} · {taskName(done.caseId)}{done.modelCalls !== undefined ? ` · ${done.modelCalls} calls` : ''}
+            {caseResultLabel(done)} · {taskName(done.caseId)}{done.modelCalls !== undefined ? ` · ${done.modelCalls} calls` : ''}
           </span>
         {/each}
       </span>

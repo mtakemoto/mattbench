@@ -1,13 +1,12 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { object, parseJob, type Job, type ModelOption, type RunInput, type Source } from '../contracts';
-import { artifactDir, configuration, endpoint, launch, pythonJson } from './config';
+import { artifactDir, endpoint, launch, pythonJson } from './config';
 
 export async function models(source: Source, customBase = '', query = ''): Promise<ModelOption[]> {
-  const config = configuration();
   const url = source === 'openrouter'
     ? 'https://openrouter.ai/api/v1/models'
-    : `${endpoint(source, source === 'freetoken' ? config.settings.localBase : customBase)}/models`;
+    : `${endpoint(source, source === 'freetoken' ? '' : customBase)}/models`;
   const response = await fetch(url, {
     headers: source === 'openrouter' ? {} : { Authorization: 'Bearer local-no-secret' },
     signal: AbortSignal.timeout(8000), cache: 'no-store'

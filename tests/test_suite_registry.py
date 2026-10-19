@@ -8,6 +8,7 @@ of naming the suite elsewhere.
 
 import ast
 import json
+import re
 import sys
 import tempfile
 import textwrap
@@ -98,6 +99,12 @@ class NoHardCodedSuiteTests(unittest.TestCase):
             for node in ast.walk(ast.parse(path.read_text(), str(path))):
                 if isinstance(node, ast.Constant) and node.value in suite_ids:
                     offenders.append(f"{path.relative_to(ROOT)}:{node.lineno} {node.value!r}")
+        quoted = re.compile(r"""['"`](%s)['"`]""" % "|".join(map(re.escape, suite_ids)))
+        for path in (ROOT / "web/src").rglob("*"):
+            if path.suffix in {".ts", ".svelte"}:
+                for number, line in enumerate(path.read_text().splitlines(), 1):
+                    if quoted.search(line):
+                        offenders.append(f"{path.relative_to(ROOT)}:{number}")
         self.assertEqual(offenders, [], "Suite IDs must come from the registry; see suites/__init__.py.")
 
 
