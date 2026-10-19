@@ -1,0 +1,155 @@
+[
+  {
+    "id": "persona_1_high_school_student",
+    "persona_number": 1,
+    "category": "laptop_recommendation",
+    "title": "High School Student (Budget & Reliability)",
+    "persona": "High school student, just needs something basic to take notes that won't crash and is as cheap as possible. Writing, occasional powerpoint presentation, research and web browsing, mostly.",
+    "catalog_fixture": "fixtures/laptops/catalog.json",
+    "expected": "asus_chromebook_plus_cx34",
+    "acceptable_answers": ["asus_chromebook_plus_cx34", "Asus Chromebook Plus CX34"],
+    "reasoning": "The Asus Chromebook Plus CX34 has an MSRP of $399.99, making it the cheapest laptop in the catalog by over $240 (the next cheapest is the Acer Aspire 16 at $649.99). ChromeOS provides extreme operating system stability without traditional system crashes or malware risks, boots instantly, handles Google Docs and Google Slides (PowerPoint presentations) seamlessly, has a 10.5-hour battery life, and features MIL-STD 810H durability for student use."
+  },
+  {
+    "id": "persona_2_college_cs_student",
+    "persona_number": 2,
+    "category": "laptop_recommendation",
+    "title": "College CS Student (Linux & Code Compilation)",
+    "persona": "College CS student - needs something that's got good support for linux and is performant enought to compile code. Not doing game development.",
+    "catalog_fixture": "fixtures/laptops/catalog.json",
+    "expected": "framework_laptop_13_amd_ai300",
+    "acceptable_answers": ["framework_laptop_13_amd_ai300", "Framework Laptop 13"],
+    "reasoning": "The Framework Laptop 13 (AMD Ryzen AI 300) offers Tier-1 certified Linux compatibility (partnering directly with Ubuntu and Fedora with open-source EC firmware). It features a powerful AMD Ryzen AI 7 360 CPU (8 cores / 16 threads up to 5.0 GHz) and 32GB DDR5-5600 RAM for rapid code compilation. It omits a power-hungry discrete GPU (not doing game dev), features modular swappable expansion ports ideal for hardware interfacing, and is 100% user-repairable and upgradable up to 96GB RAM."
+  },
+  {
+    "id": "persona_3_video_editor_premiere",
+    "persona_number": 3,
+    "category": "laptop_recommendation",
+    "title": "Professional Video Editor (Adobe Premiere & External Monitors)",
+    "persona": "Video editor - working professional that needs something that runs Adobe Premiere well and has good monitor output options.",
+    "catalog_fixture": "fixtures/laptops/catalog.json",
+    "expected": "lenovo_yoga_pro_9i_16",
+    "acceptable_answers": ["lenovo_yoga_pro_9i_16", "Lenovo Yoga Pro 9i 16", "Lenovo Yoga Pro 9i"],
+    "reasoning": "Adobe Premiere Pro leverages NVIDIA CUDA and NVENC hardware video encoding, which is powered by the Lenovo Yoga Pro 9i's discrete NVIDIA GeForce RTX 5060 GPU with Studio drivers and high-performance Intel Core Ultra 9 285H processor. It features a factory color-calibrated 3.2K PureSight Pro display (100% Adobe RGB and 100% DCI-P3), a full-size high-speed SD card slot for camera footage ingest, and comprehensive external monitor connectivity via HDMI 2.1 (up to 8K) and Thunderbolt 4 (40Gbps DisplayPort)."
+  },
+  {
+    "id": "persona_4_video_editor_final_cut_pro",
+    "persona_number": 4,
+    "category": "laptop_recommendation",
+    "title": "Professional Video Editor (Final Cut Pro)",
+    "persona": "Video editor - needs something that runs Final Cut Pro well.",
+    "catalog_fixture": "fixtures/laptops/catalog.json",
+    "expected": "apple_macbook_pro_14_m5_pro",
+    "acceptable_answers": ["apple_macbook_pro_14_m5_pro", "Apple MacBook Pro 14.2\" (M5 Pro)", "MacBook Pro 14"],
+    "reasoning": "Final Cut Pro is an Apple-exclusive non-linear editing suite that only runs on macOS, eliminating all 8 Windows and ChromeOS machines. Between the two Apple laptops, the MacBook Pro 14\" (M5 Pro) is the dedicated professional video editing workstation: it features active dual-fan cooling to prevent thermal throttling during long 4K/8K renders (unlike the fanless MacBook Air), dedicated hardware ProRes encode/decode accelerators, 24GB Unified Memory, and a Liquid Retina XDR display with video reference presets and 1,000 nits sustained brightness."
+  },
+  {
+    "id": "persona_5_budget_gamer",
+    "persona_number": 5,
+    "category": "laptop_recommendation",
+    "title": "Value Gamer (Dedicated GPU & High Refresh Rate)",
+    "persona": "Gamer - cares about a dedicated GPU, high refresh rate display and not much else. Portablility comes second to performance. Cares about good value for money.",
+    "catalog_fixture": "fixtures/laptops/catalog.json",
+    "expected": "gigabyte_gaming_a16_rtx5060",
+    "acceptable_answers": ["gigabyte_gaming_a16_rtx5060", "Gigabyte Gaming A16", "Gigabyte Gaming A16 (Intel Core i7-13620H, RTX 5060)"],
+    "reasoning": "The Gigabyte Gaming A16 is built specifically for high gaming performance per dollar ($1,199.99), featuring a dedicated NVIDIA GeForce RTX 5060 Laptop GPU, 32GB DDR5 RAM, and a 16.0-inch 165Hz high-refresh display. Weighing 4.85 lbs with a 0.82-inch thick chassis and modest 5-hour battery life, portability is secondary to raw gaming performance and affordability."
+  },
+  {
+    "id": "persona_6_portable_gamer_premium",
+    "persona_number": 6,
+    "category": "laptop_recommendation",
+    "title": "Enthusiast Gamer (Portable & Performant, Money No Object)",
+    "persona": "Gamer that wants something portable AND performant, money is no issue.",
+    "catalog_fixture": "fixtures/laptops/catalog.json",
+    "expected": "asus_rog_zephyrus_g14",
+    "acceptable_answers": ["asus_rog_zephyrus_g14", "Asus ROG Zephyrus G14", "Asus ROG Zephyrus G14 (2026, RTX 5070)"],
+    "reasoning": "The Asus ROG Zephyrus G14 is an ultra-portable gaming flagship costing $2,199.99 (where budget is no barrier). It combines high gaming performance (NVIDIA GeForce RTX 5070 discrete GPU, AMD Ryzen AI 9 HX 370 CPU with 12 cores/24 threads, 32GB RAM) with extreme portability: weighing only 3.31 lbs and measuring 0.63 inches thin in a CNC-machined unibody aluminum chassis with a 14-inch 120Hz 3K OLED ROG Nebula display."
+  },
+  {
+    "id": "persona_7_fashionable_student_non_windows",
+    "persona_number": 7,
+    "category": "laptop_recommendation",
+    "title": "College Student (Fashionable, Non-Windows, Daily Tasks)",
+    "persona": "College student that wants something fashionable that can handle daily tasks well. Not technical, and doesn't like Windows.",
+    "catalog_fixture": "fixtures/laptops/catalog.json",
+    "expected": "apple_macbook_air_13_m5",
+    "acceptable_answers": ["apple_macbook_air_13_m5", "Apple MacBook Air 13\" (M5, Sky Blue)", "MacBook Air 13"],
+    "reasoning": "Running macOS Sequoia, the MacBook Air completely satisfies the requirement of not liking Windows. In its iconic Sky Blue aluminum unibody, it is widely considered the quintessential fashionable laptop. It is ultra-thin (0.44 in), lightweight (2.70 lbs), completely silent (fanless), provides 18 hours of battery life, and effortlessly handles daily tasks (browsing, streaming, typing, video calls) for non-technical users."
+  },
+  {
+    "id": "persona_8_ai_engineer_128b_llm",
+    "persona_number": 8,
+    "category": "trick_question_none",
+    "title": "AI Engineer (Local 128B LLM Execution)",
+    "persona": "AI engineer that needs something that can run intelligent, local LLMs in the 128B range.",
+    "catalog_fixture": "fixtures/laptops/catalog.json",
+    "expected": "NONE",
+    "acceptable_answers": ["NONE", "None", "none"],
+    "reasoning": "A 128-billion parameter language model requires approximately 65–75 GB of memory even under aggressive 4-bit quantization (INT4), and over 250 GB in FP16 precision. In the 10-laptop catalog, the maximum memory available on any laptop is 32GB (e.g. Gigabyte, ROG Zephyrus, ExpertBook, Framework) or 24GB Unified Memory (MacBook Pro). Not a single laptop in the catalog possesses sufficient memory to load or execute a 128B LLM locally. Therefore, the correct answer is NONE."
+  },
+  {
+    "id": "persona_9_elderly_person_lightweight_support",
+    "persona_number": 9,
+    "category": "laptop_recommendation",
+    "title": "Elderly Person (Back Issues, Easy, Lightweight, Top Tech Support)",
+    "persona": "Elderly person with back issues. Not technical, needs something easy and lightweight. Ideally with good tech support to back it up.",
+    "catalog_fixture": "fixtures/laptops/catalog.json",
+    "expected": "apple_macbook_air_13_m5",
+    "acceptable_answers": ["apple_macbook_air_13_m5", "Apple MacBook Air 13\" (M5, Sky Blue)", "MacBook Air 13", "Apple MacBook Air"],
+    "reasoning": "The Apple MacBook Air 13\" is the lightest laptop in the entire catalog at just 2.70 lbs (1.24 kg) and 0.44 inches thin, minimizing physical strain for someone with back issues. For a non-technical user, macOS provides an intuitive, reliable, and virus-resilient experience without confusing driver or hardware configurations. Crucially, Apple provides the tech industry's leading support infrastructure: owners can get free, walk-in, face-to-face assistance from specialists at physical Apple Store Genius Bars nationwide, alongside comprehensive telephone and online AppleCare support, which Wirecutter ranks as the best laptop support experience available."
+  },
+  {
+    "id": "persona_10_audiophile_best_audio",
+    "persona_number": 10,
+    "category": "audiophile_conditional_recommendation",
+    "title": "Audiophile (Best Quality Audio: Integrated DAC vs External DAC)",
+    "persona": "Audiophile who cares about having the best quality audio.",
+    "catalog_fixture": "fixtures/laptops/catalog.json",
+    "expected": "apple_macbook_pro_14_m5_pro",
+    "acceptable_answers": [
+      "apple_macbook_pro_14_m5_pro",
+      "apple_macbook_air_13_m5",
+      "Apple MacBook Pro 14.2\" (M5 Pro)",
+      "Apple MacBook Air 13\" (M5, Sky Blue)",
+      "ALL"
+    ],
+    "conditional_evaluation": {
+      "type": "audiophile_dac",
+      "rule_description": "Acceptable answers are the MacBooks (apple_macbook_pro_14_m5_pro or apple_macbook_air_13_m5), but only if the reasoning mentions the integrated DAC matching the Apple dongle quality; or ALL if the reasoning mentions using an external DAC."
+    },
+    "reasoning": "For built-in audio hardware, the Apple MacBooks (MacBook Pro 14 and MacBook Air 13) are the only laptops in the catalog with integrated hardware DACs engineered to match the reference quality of the Apple audio dongle, alongside high-impedance headphone support up to 96kHz. Alternatively, if using an external DAC, ALL laptops in the catalog are acceptable since any laptop can output bit-perfect digital audio over USB."
+  },
+  {
+    "id": "trick_all_basic_cloud_remote_work",
+    "persona_number": null,
+    "category": "trick_question_all",
+    "title": "Remote Worker (Basic Cloud & Video Calls)",
+    "persona": "Remote worker who needs a laptop that has at least 8 GB of RAM, a built-in webcam for video calls, supports modern Wi-Fi, and can browse the web and edit documents in Google Docs.",
+    "catalog_fixture": "fixtures/laptops/catalog.json",
+    "expected": "ALL",
+    "acceptable_answers": ["ALL", "All", "all"],
+    "reasoning": "Every single one of the 10 laptops in the catalog satisfies these criteria: each has at least 8 GB of RAM (ranging from 8GB up to 32GB), each includes a built-in webcam (720p, 1080p, 5MP, or 12MP), each supports modern Wi-Fi (Wi-Fi 6, 6E, or 7), and all run operating systems with modern web browsers capable of editing Google Docs. Therefore, the correct answer is ALL."
+  },
+  {
+    "id": "trick_none_submersible_optical_drive",
+    "persona_number": null,
+    "category": "trick_question_none",
+    "title": "Field Researcher (Submersible Waterproof & Optical Drive)",
+    "persona": "Marine field researcher who needs an IP68-certified fully submersible waterproof laptop with a built-in optical Blu-ray Disc drive.",
+    "catalog_fixture": "fixtures/laptops/catalog.json",
+    "expected": "NONE",
+    "acceptable_answers": ["NONE", "None", "none"],
+    "reasoning": "None of the laptops in the catalog has certified IP68 submersible water resistance, and none contains an internal optical Blu-ray drive (optical drives have been completely eliminated from modern ultrabooks and laptops). Therefore, the correct answer is NONE."
+  },
+  {
+    "id": "trick_all_commuter_under_5_5_lbs",
+    "persona_number": null,
+    "category": "trick_question_all",
+    "title": "Commuter (Under 5.5 lbs, 1080p+, 128GB+ Storage)",
+    "persona": "Commuter who is shopping for any laptop from the catalog that weighs under 5.5 pounds and has a display resolution of at least 1080p (Full HD) with at least 128 GB of internal storage.",
+    "catalog_fixture": "fixtures/laptops/catalog.json",
+    "expected": "ALL",
+    "acceptable_answers": ["ALL", "All", "all"],
+    "reasoning": "All 10 laptops in the catalog qualify: the heaviest laptop is the Gigabyte Gaming A16 at 4.85 lbs (which is under 5.5 lbs); all 10 laptops have screen resolutions of 1920x1080 or higher (from 1080p up to 3200x2000); and all 10 laptops have at least 128 GB of storage (lowest is 128GB, with others having 512GB or 1TB). Therefore, the correct answer is ALL."
+  }
+]

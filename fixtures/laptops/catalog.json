@@ -1,0 +1,834 @@
+[
+  {
+    "id": "acer_aspire_16_a16_71m",
+    "name": "Acer Aspire 16 (A16-71M-593C)",
+    "brand": "Acer",
+    "model_number": "A16-71M-593C",
+    "price_usd": 649.99,
+    "source_url": "https://www.walmart.com/ip/Acer-Aspire-16-WUXGA-1920-x-1200-Window-Laptop-16GB-RAM-512GB-SSD-Intel-Core-Ultra-5-Intel-Graphics-A16-71M-593C-Steel-Gray/18143224660?wmlspartner=wlpa",
+    "images": [
+      {
+        "url": "https://i5.walmartimages.com/seo/Acer-Aspire-16-WUXGA-1920-x-1200-Window-Laptop-16GB-RAM-512GB-SSD-Intel-Core-Ultra-5-Intel-Graphics-A16-71M-593C-Steel-Gray_front.jpg",
+        "description": "Front-facing open view of Acer Aspire 16 display and Steel Gray backlit keyboard deck",
+        "view_type": "open"
+      },
+      {
+        "url": "https://i5.walmartimages.com/seo/Acer-Aspire-16-WUXGA-1920-x-1200-Window-Laptop-16GB-RAM-512GB-SSD-Intel-Core-Ultra-5-Intel-Graphics-A16-71M-593C-Steel-Gray_angled.jpg",
+        "description": "Three-quarter angled view highlighting thin bezels and side port layout",
+        "view_type": "angled"
+      }
+    ],
+    "os": "Windows 11 Home",
+    "screen": {
+      "size_inches": 16.0,
+      "resolution": "1920x1200",
+      "resolution_horizontal": 1920,
+      "resolution_vertical": 1200,
+      "aspect_ratio": "16:10",
+      "refresh_rate_hz": 60,
+      "panel_type": "IPS WUXGA",
+      "touchscreen": false,
+      "brightness_nits": 300
+    },
+    "dimensions": {
+      "width_in": 14.16,
+      "depth_in": 9.97,
+      "thickness_in": 0.70,
+      "formatted": "14.16 x 9.97 x 0.70 in"
+    },
+    "weight_lbs": 3.60,
+    "battery": {
+      "capacity_wh": 65.0,
+      "estimated_life_hours": 10.0
+    },
+    "processor": {
+      "model": "Intel Core Ultra 5 115U",
+      "brand": "Intel",
+      "cores": 8,
+      "threads": 10,
+      "boost_clock_ghz": 4.2,
+      "architecture": "x86_64",
+      "npu_tops": 11.5
+    },
+    "ram": {
+      "capacity_gb": 16,
+      "type": "LPDDR5X",
+      "speed_mhz": 6400,
+      "upgradable": false
+    },
+    "storage": {
+      "capacity_gb": 512,
+      "type": "PCIe Gen 4 NVMe SSD",
+      "upgradable": true
+    },
+    "graphics": {
+      "gpu": "Intel Graphics (Integrated)",
+      "type": "integrated",
+      "vram_gb": null
+    },
+    "ports": [
+      "2x USB Type-C (Thunderbolt 4 / USB4, PD, DP)",
+      "2x USB 3.2 Gen 1 Type-A",
+      "1x HDMI 2.1",
+      "1x 3.5mm Headphone/Microphone combo jack",
+      "1x MicroSD card reader"
+    ],
+    "webcam": "1080p FHD IR camera with privacy shutter",
+    "special_features": [
+      "Copilot+ AI features",
+      "Steel Gray aluminum top cover",
+      "Backlit keyboard with numeric keypad",
+      "3 months Microsoft 365 Personal included"
+    ]
+  },
+  {
+    "id": "apple_macbook_pro_14_m5_pro",
+    "name": "Apple MacBook Pro 14.2\" (M5 Pro)",
+    "brand": "Apple",
+    "model_number": "MGDR4LL/A",
+    "price_usd": 2069.10,
+    "source_url": "https://www.amazon.com/gp/product/B0GR1JK9W3?smid=ATVPDKIKX0DER",
+    "images": [
+      {
+        "url": "https://m.media-amazon.com/images/I/71MGDR4LL_macbook_pro_14_spaceblack_front.jpg",
+        "description": "Front open view of MacBook Pro 14 Liquid Retina XDR display in Space Black",
+        "view_type": "open"
+      },
+      {
+        "url": "https://m.media-amazon.com/images/I/71MGDR4LL_macbook_pro_14_spaceblack_ports.jpg",
+        "description": "Side profile view showcasing MagSafe 3, HDMI 2.1, and Thunderbolt 5 ports",
+        "view_type": "ports"
+      }
+    ],
+    "os": "macOS Sequoia",
+    "screen": {
+      "size_inches": 14.2,
+      "resolution": "3024x1964",
+      "resolution_horizontal": 3024,
+      "resolution_vertical": 1964,
+      "aspect_ratio": "16:10",
+      "refresh_rate_hz": 120,
+      "panel_type": "Liquid Retina XDR (Mini-LED)",
+      "touchscreen": false,
+      "brightness_nits": 1000
+    },
+    "dimensions": {
+      "width_in": 12.31,
+      "depth_in": 8.71,
+      "thickness_in": 0.61,
+      "formatted": "12.31 x 8.71 x 0.61 in"
+    },
+    "weight_lbs": 3.52,
+    "battery": {
+      "capacity_wh": 72.4,
+      "estimated_life_hours": 18.0
+    },
+    "processor": {
+      "model": "Apple M5 Pro",
+      "brand": "Apple",
+      "cores": 15,
+      "threads": null,
+      "boost_clock_ghz": 4.5,
+      "architecture": "ARM64",
+      "npu_tops": 38.0
+    },
+    "ram": {
+      "capacity_gb": 24,
+      "type": "Unified Memory",
+      "speed_mhz": null,
+      "upgradable": false
+    },
+    "storage": {
+      "capacity_gb": 1024,
+      "type": "High-speed NVMe SSD",
+      "upgradable": false
+    },
+    "graphics": {
+      "gpu": "Apple M5 Pro 16-core GPU",
+      "type": "integrated",
+      "vram_gb": 24
+    },
+    "ports": [
+      "3x Thunderbolt 5 (USB-C) with charging and DisplayPort",
+      "1x HDMI 2.1 port",
+      "1x SDXC card slot",
+      "1x MagSafe 3 charging port",
+      "1x 3.5mm headphone jack with advanced support for high-impedance headphones and integrated studio-grade DAC"
+    ],
+    "webcam": "12MP Center Stage camera with Desk View",
+    "special_features": [
+      "Active dual-fan thermal architecture for sustained heavy rendering",
+      "Dedicated ProRes encode/decode and AV1 hardware media engines",
+      "ProMotion adaptive refresh rate up to 120Hz",
+      "1,600 nits peak HDR brightness and 1,000,000:1 contrast ratio",
+      "Six-speaker sound system with force-cancelling woofers",
+      "Integrated hardware DAC matching Apple USB-C audio dongle reference quality with up to 96kHz high-resolution audio support",
+      "Native Final Cut Pro hardware acceleration"
+    ]
+  },
+  {
+    "id": "framework_laptop_13_amd_ai300",
+    "name": "Framework Laptop 13 (AMD Ryzen AI 300)",
+    "brand": "Framework",
+    "model_number": "FRANMD0001",
+    "price_usd": 1299.00,
+    "source_url": "https://frame.work/products/laptop13-amd-ai300/configuration/new",
+    "images": [
+      {
+        "url": "https://images.prismic.io/frameworkmarketplace/framework-laptop-13-amd-ai300-open.png",
+        "description": "Framework Laptop 13 open view with 3:2 aspect ratio display and matte bezel",
+        "view_type": "open"
+      },
+      {
+        "url": "https://images.prismic.io/frameworkmarketplace/framework-laptop-13-modular-cards.png",
+        "description": "Underneath and side view showing user-swappable modular expansion cards",
+        "view_type": "ports"
+      }
+    ],
+    "os": "Linux (Ubuntu / Fedora certified) or Windows 11",
+    "screen": {
+      "size_inches": 13.5,
+      "resolution": "2880x1920",
+      "resolution_horizontal": 2880,
+      "resolution_vertical": 1920,
+      "aspect_ratio": "3:2",
+      "refresh_rate_hz": 120,
+      "panel_type": "Anti-glare IPS",
+      "touchscreen": false,
+      "brightness_nits": 500
+    },
+    "dimensions": {
+      "width_in": 11.68,
+      "depth_in": 9.01,
+      "thickness_in": 0.62,
+      "formatted": "11.68 x 9.01 x 0.62 in"
+    },
+    "weight_lbs": 2.86,
+    "battery": {
+      "capacity_wh": 61.0,
+      "estimated_life_hours": 14.0
+    },
+    "processor": {
+      "model": "AMD Ryzen AI 7 360",
+      "brand": "AMD",
+      "cores": 8,
+      "threads": 16,
+      "boost_clock_ghz": 5.0,
+      "architecture": "x86_64",
+      "npu_tops": 50.0
+    },
+    "ram": {
+      "capacity_gb": 32,
+      "type": "DDR5-5600 SO-DIMM",
+      "speed_mhz": 5600,
+      "upgradable": true
+    },
+    "storage": {
+      "capacity_gb": 1024,
+      "type": "M.2 2280 PCIe Gen 4 NVMe SSD",
+      "upgradable": true
+    },
+    "graphics": {
+      "gpu": "AMD Radeon 880M Graphics",
+      "type": "integrated",
+      "vram_gb": null
+    },
+    "ports": [
+      "4x User-swappable Modular Expansion Card bays (USB-C, USB-A, HDMI 2.1, DisplayPort 1.4, MicroSD, Ethernet)",
+      "1x 3.5mm Headphone Jack"
+    ],
+    "webcam": "1080p FHD webcam with hardware privacy switches for camera and microphone",
+    "special_features": [
+      "100% user-repairable with QR-code guides and included screwdriver",
+      "Official Linux Tier-1 support with out-of-the-box Ubuntu and Fedora compatibility",
+      "Open-source embedded controller (EC) firmware",
+      "Dual SO-DIMM slots upgradable up to 96GB RAM",
+      "Swappable mainboard and battery design"
+    ]
+  },
+  {
+    "id": "apple_macbook_air_13_m5",
+    "name": "Apple MacBook Air 13\" (M5, Sky Blue)",
+    "brand": "Apple",
+    "model_number": "MDHH4LL/A",
+    "price_usd": 1256.00,
+    "source_url": "https://www.amazon.com/dp/B0GR1493ZV/",
+    "images": [
+      {
+        "url": "https://m.media-amazon.com/images/I/71MDHH4LL_macbook_air_13_skyblue_angled.jpg",
+        "description": "Angled view of 13-inch MacBook Air in Sky Blue aluminum unibody",
+        "view_type": "angled"
+      },
+      {
+        "url": "https://m.media-amazon.com/images/I/71MDHH4LL_macbook_air_13_skyblue_profile.jpg",
+        "description": "Ultra-thin 0.44-inch profile view showing MagSafe 3 and dual Thunderbolt ports",
+        "view_type": "profile"
+      }
+    ],
+    "os": "macOS Sequoia",
+    "screen": {
+      "size_inches": 13.6,
+      "resolution": "2560x1664",
+      "resolution_horizontal": 2560,
+      "resolution_vertical": 1664,
+      "aspect_ratio": "16:10",
+      "refresh_rate_hz": 60,
+      "panel_type": "Liquid Retina IPS",
+      "touchscreen": false,
+      "brightness_nits": 500
+    },
+    "dimensions": {
+      "width_in": 11.97,
+      "depth_in": 8.46,
+      "thickness_in": 0.44,
+      "formatted": "11.97 x 8.46 x 0.44 in"
+    },
+    "weight_lbs": 2.70,
+    "battery": {
+      "capacity_wh": 52.6,
+      "estimated_life_hours": 18.0
+    },
+    "processor": {
+      "model": "Apple M5",
+      "brand": "Apple",
+      "cores": 10,
+      "threads": null,
+      "boost_clock_ghz": 4.1,
+      "architecture": "ARM64",
+      "npu_tops": 38.0
+    },
+    "ram": {
+      "capacity_gb": 16,
+      "type": "Unified Memory",
+      "speed_mhz": null,
+      "upgradable": false
+    },
+    "storage": {
+      "capacity_gb": 512,
+      "type": "High-speed NVMe SSD",
+      "upgradable": false
+    },
+    "graphics": {
+      "gpu": "Apple M5 10-core GPU",
+      "type": "integrated",
+      "vram_gb": 16
+    },
+    "ports": [
+      "2x Thunderbolt 4 / USB4 ports (supports up to two external displays with lid closed)",
+      "1x MagSafe 3 charging port",
+      "1x 3.5mm headphone jack with advanced support for high-impedance headphones and built-in hardware DAC"
+    ],
+    "webcam": "12MP Center Stage camera",
+    "special_features": [
+      "Fanless silent acoustic design (zero fan noise)",
+      "Ultra-thin 0.44-inch fashionable lightweight aluminum enclosure",
+      "Apple Intelligence support with macOS Sequoia",
+      "Four-speaker sound system with Spatial Audio",
+      "Integrated hardware DAC matching Apple audio adapter reference sound quality",
+      "Touch ID fingerprint sensor on Magic Keyboard"
+    ]
+  },
+  {
+    "id": "gigabyte_gaming_a16_rtx5060",
+    "name": "Gigabyte Gaming A16 (Intel Core i7-13620H, RTX 5060)",
+    "brand": "Gigabyte",
+    "model_number": "CVHI3US864SH",
+    "price_usd": 1199.99,
+    "source_url": "https://www.bestbuy.com/product/gigabyte-gaming-a16-16-165hz-1920x1200-wuxga-intel-core-i7-13620h-1tb-ssd-32gb-ddr5-ram-geforce-rtx-5060-black-steel/J3GWPQC2TJ",
+    "images": [
+      {
+        "url": "https://pisces.bbystatic.com/image2/BestBuy_US/images/products/6632/6632143_sd.jpg",
+        "description": "Front open view of Gigabyte Gaming A16 showing 165Hz display and RGB backlit keyboard",
+        "view_type": "open"
+      },
+      {
+        "url": "https://pisces.bbystatic.com/image2/BestBuy_US/images/products/6632/6632143cv11d.jpg",
+        "description": "Angled view highlighting dual thermal exhaust vents and Black Steel chassis",
+        "view_type": "angled"
+      }
+    ],
+    "os": "Windows 11 Home",
+    "screen": {
+      "size_inches": 16.0,
+      "resolution": "1920x1200",
+      "resolution_horizontal": 1920,
+      "resolution_vertical": 1200,
+      "aspect_ratio": "16:10",
+      "refresh_rate_hz": 165,
+      "panel_type": "IPS WUXGA 165Hz",
+      "touchscreen": false,
+      "brightness_nits": 300
+    },
+    "dimensions": {
+      "width_in": 14.11,
+      "depth_in": 10.33,
+      "thickness_in": 0.82,
+      "formatted": "14.11 x 10.33 x 0.82 in"
+    },
+    "weight_lbs": 4.85,
+    "battery": {
+      "capacity_wh": 76.0,
+      "estimated_life_hours": 5.0
+    },
+    "processor": {
+      "model": "Intel Core i7-13620H",
+      "brand": "Intel",
+      "cores": 10,
+      "threads": 16,
+      "boost_clock_ghz": 4.9,
+      "architecture": "x86_64",
+      "npu_tops": null
+    },
+    "ram": {
+      "capacity_gb": 32,
+      "type": "DDR5-5200 SO-DIMM",
+      "speed_mhz": 5200,
+      "upgradable": true
+    },
+    "storage": {
+      "capacity_gb": 1024,
+      "type": "PCIe Gen 4 NVMe SSD",
+      "upgradable": true
+    },
+    "graphics": {
+      "gpu": "NVIDIA GeForce RTX 5060 Laptop GPU",
+      "type": "discrete",
+      "vram_gb": 8
+    },
+    "ports": [
+      "1x USB 3.2 Gen 1 Type-C (DP 1.4 / PD 3.0)",
+      "2x USB 3.2 Gen 1 Type-A",
+      "1x USB 2.0 Type-A",
+      "1x HDMI 2.1",
+      "1x RJ-45 Gigabit Ethernet",
+      "1x 3.5mm Audio combo jack",
+      "1x DC-in barrel power jack"
+    ],
+    "webcam": "720p HD webcam with dual array microphone",
+    "special_features": [
+      "High refresh rate 165Hz gaming panel",
+      "Dedicated NVIDIA RTX 5060 discrete graphics with DLSS 3 support",
+      "WINDFORCE cooling system with dual 59-blade fans",
+      "Dual SO-DIMM slots upgradable to 64GB DDR5",
+      "Dual M.2 PCIe Gen4 SSD slots upgradable to 4TB",
+      "High gaming performance per dollar"
+    ]
+  },
+  {
+    "id": "asus_chromebook_plus_cx34",
+    "name": "Asus Chromebook Plus CX34",
+    "brand": "Asus",
+    "model_number": "CX3402CBA",
+    "price_usd": 399.99,
+    "source_url": "https://www.nytimes.com/wirecutter/reviews/best-laptops-for-college-students/#budget-chromebook-pick",
+    "images": [
+      {
+        "url": "https://dlcdnwebimgs.asus.com/gain/9B9D8A78-65A0-410E-921A-1419B53E9B56/w1000/h732",
+        "description": "Front open view of Asus Chromebook Plus CX34 in Pearl White finish",
+        "view_type": "open"
+      },
+      {
+        "url": "https://dlcdnwebimgs.asus.com/gain/28BA91F9-2B3A-42F7-A6E6-0A08779930A4/w1000/h732",
+        "description": "Angled top-down view showing keyboard, trackpad, and anti-glare display",
+        "view_type": "angled"
+      }
+    ],
+    "os": "ChromeOS",
+    "screen": {
+      "size_inches": 14.0,
+      "resolution": "1920x1080",
+      "resolution_horizontal": 1920,
+      "resolution_vertical": 1080,
+      "aspect_ratio": "16:9",
+      "refresh_rate_hz": 60,
+      "panel_type": "Anti-glare IPS FHD",
+      "touchscreen": false,
+      "brightness_nits": 250
+    },
+    "dimensions": {
+      "width_in": 12.85,
+      "depth_in": 8.44,
+      "thickness_in": 0.74,
+      "formatted": "12.85 x 8.44 x 0.74 in"
+    },
+    "weight_lbs": 3.17,
+    "battery": {
+      "capacity_wh": 50.0,
+      "estimated_life_hours": 10.5
+    },
+    "processor": {
+      "model": "Intel Core i3-1315U",
+      "brand": "Intel",
+      "cores": 6,
+      "threads": 8,
+      "boost_clock_ghz": 4.5,
+      "architecture": "x86_64",
+      "npu_tops": null
+    },
+    "ram": {
+      "capacity_gb": 8,
+      "type": "LPDDR5",
+      "speed_mhz": 4800,
+      "upgradable": false
+    },
+    "storage": {
+      "capacity_gb": 128,
+      "type": "UFS Flash Storage",
+      "upgradable": false
+    },
+    "graphics": {
+      "gpu": "Intel UHD Graphics",
+      "type": "integrated",
+      "vram_gb": null
+    },
+    "ports": [
+      "2x USB 3.2 Gen 1 Type-C (support display and power delivery)",
+      "2x USB 3.2 Gen 1 Type-A",
+      "1x HDMI 1.4",
+      "1x 3.5mm Headphone combo jack"
+    ],
+    "webcam": "1080p FHD webcam with physical privacy shutter",
+    "special_features": [
+      "Lowest price point in class ($399 MSRP)",
+      "MIL-STD 810H military-grade structural durability",
+      "ChromeOS sandboxed architecture: impervious to traditional Windows crashes and malware",
+      "Instant boot and Google Docs / Slides cloud integration",
+      "Google AI photo and text editing tools built-in"
+    ]
+  },
+  {
+    "id": "asus_rog_zephyrus_g14",
+    "name": "Asus ROG Zephyrus G14 (2026, RTX 5070)",
+    "brand": "Asus",
+    "model_number": "GA403UI",
+    "price_usd": 2199.99,
+    "source_url": "https://www.nytimes.com/wirecutter/reviews/best-gaming-laptops/#top-portable-gaming-pick",
+    "images": [
+      {
+        "url": "https://dlcdnwebimgs.asus.com/gain/35AA8C56-D7E9-44F4-A449-3EE6DBCFE88E/w1000/h732",
+        "description": "Front view of ROG Zephyrus G14 showcasing 3K 120Hz OLED ROG Nebula display",
+        "view_type": "open"
+      },
+      {
+        "url": "https://dlcdnwebimgs.asus.com/gain/49C30489-0E24-4B39-BFD9-CD8B48F7BCB6/w1000/h732",
+        "description": "Rear lid view showing CNC-machined aluminum chassis and Slash Lighting LED bar",
+        "view_type": "angled"
+      }
+    ],
+    "os": "Windows 11 Home",
+    "screen": {
+      "size_inches": 14.0,
+      "resolution": "2880x1800",
+      "resolution_horizontal": 2880,
+      "resolution_vertical": 1800,
+      "aspect_ratio": "16:10",
+      "refresh_rate_hz": 120,
+      "panel_type": "ROG Nebula 3K OLED (0.2ms, G-SYNC)",
+      "touchscreen": false,
+      "brightness_nits": 500
+    },
+    "dimensions": {
+      "width_in": 12.24,
+      "depth_in": 8.66,
+      "thickness_in": 0.63,
+      "formatted": "12.24 x 8.66 x 0.63 in"
+    },
+    "weight_lbs": 3.31,
+    "battery": {
+      "capacity_wh": 73.0,
+      "estimated_life_hours": 10.0
+    },
+    "processor": {
+      "model": "AMD Ryzen AI 9 HX 370",
+      "brand": "AMD",
+      "cores": 12,
+      "threads": 24,
+      "boost_clock_ghz": 5.1,
+      "architecture": "x86_64",
+      "npu_tops": 50.0
+    },
+    "ram": {
+      "capacity_gb": 32,
+      "type": "LPDDR5X-7500",
+      "speed_mhz": 7500,
+      "upgradable": false
+    },
+    "storage": {
+      "capacity_gb": 1024,
+      "type": "PCIe Gen 4 NVMe M.2 SSD",
+      "upgradable": true
+    },
+    "graphics": {
+      "gpu": "NVIDIA GeForce RTX 5070 Laptop GPU",
+      "type": "discrete",
+      "vram_gb": 8
+    },
+    "ports": [
+      "1x USB4 Type-C (DisplayPort 2.1, 100W PD)",
+      "1x USB 3.2 Gen 2 Type-C (DisplayPort 1.4, 100W PD)",
+      "2x USB 3.2 Gen 2 Type-A",
+      "1x HDMI 2.1 FRL",
+      "1x MicroSD card reader (UHS-II)",
+      "1x 3.5mm Combo Audio Jack"
+    ],
+    "webcam": "1080p FHD IR camera supporting Windows Hello",
+    "special_features": [
+      "Premium CNC-machined unibody aluminum chassis weighing only 3.31 lbs",
+      "Ultra-portable gaming flagship with RTX 5070 graphics and MUX Switch",
+      "ROG Nebula 3K 120Hz OLED display with 100% DCI-P3 and 0.2ms response time",
+      "Custom vapor chamber and tri-fan cooling system with liquid metal",
+      "Programmable Slash Lighting single-strip lid matrix"
+    ]
+  },
+  {
+    "id": "lenovo_yoga_7i_14",
+    "name": "Lenovo Yoga 7i 2-in-1 14\" (Intel Core Ultra 5)",
+    "brand": "Lenovo",
+    "model_number": "83DJ0005US",
+    "price_usd": 849.99,
+    "source_url": "https://www.nytimes.com/wirecutter/reviews/best-windows-laptops/#top-pick-windows-laptop",
+    "images": [
+      {
+        "url": "https://p3-ofp.static.pub/fes/cms/2024/02/05/lenovo-yoga-7i-gen-9-14-inch-front.png",
+        "description": "Front view of Lenovo Yoga 7i showing vibrant 14-inch OLED touchscreen in laptop mode",
+        "view_type": "open"
+      },
+      {
+        "url": "https://p3-ofp.static.pub/fes/cms/2024/02/05/lenovo-yoga-7i-gen-9-14-inch-tent.png",
+        "description": "360-degree convertible hinge bent into tent mode for touch interaction and presentations",
+        "view_type": "angled"
+      }
+    ],
+    "os": "Windows 11 Home",
+    "screen": {
+      "size_inches": 14.0,
+      "resolution": "1920x1200",
+      "resolution_horizontal": 1920,
+      "resolution_vertical": 1200,
+      "aspect_ratio": "16:10",
+      "refresh_rate_hz": 60,
+      "panel_type": "OLED WUXGA Touchscreen (Dolby Vision)",
+      "touchscreen": true,
+      "brightness_nits": 400
+    },
+    "dimensions": {
+      "width_in": 12.51,
+      "depth_in": 8.74,
+      "thickness_in": 0.65,
+      "formatted": "12.51 x 8.74 x 0.65 in"
+    },
+    "weight_lbs": 3.04,
+    "battery": {
+      "capacity_wh": 71.0,
+      "estimated_life_hours": 16.5
+    },
+    "processor": {
+      "model": "Intel Core Ultra 5 125U",
+      "brand": "Intel",
+      "cores": 12,
+      "threads": 14,
+      "boost_clock_ghz": 4.3,
+      "architecture": "x86_64",
+      "npu_tops": 11.5
+    },
+    "ram": {
+      "capacity_gb": 16,
+      "type": "LPDDR5X-7467",
+      "speed_mhz": 7467,
+      "upgradable": false
+    },
+    "storage": {
+      "capacity_gb": 512,
+      "type": "PCIe Gen 4 NVMe SSD",
+      "upgradable": true
+    },
+    "graphics": {
+      "gpu": "Intel Arc Graphics (Integrated)",
+      "type": "integrated",
+      "vram_gb": null
+    },
+    "ports": [
+      "2x Thunderbolt 4 / USB-C (40Gbps, PD 3.0, DP 1.4)",
+      "1x USB 3.2 Gen 1 Type-A (Always On)",
+      "1x HDMI 2.1 TMDS",
+      "1x MicroSD card reader",
+      "1x 3.5mm Headphone combo jack"
+    ],
+    "webcam": "1080p FHD IR camera with Windows Hello and privacy shutter",
+    "special_features": [
+      "360-degree convertible hinge (laptop, tent, stand, tablet modes)",
+      "Vivid OLED display with 100% DCI-P3 color gamut",
+      "Lenovo Digital Pen stylus support for handwritten notes and sketches",
+      "Wirecutter top pick for best overall Windows laptop with 16.5-hour tested battery life"
+    ]
+  },
+  {
+    "id": "lenovo_yoga_pro_9i_16",
+    "name": "Lenovo Yoga Pro 9i 16\" (Core Ultra 9, RTX 5060)",
+    "brand": "Lenovo",
+    "model_number": "83DN0008US",
+    "price_usd": 1899.99,
+    "source_url": "https://www.nytimes.com/wirecutter/reviews/best-laptops/#the-best-windows-laptop-for-photo-and-video-editing",
+    "images": [
+      {
+        "url": "https://p1-ofp.static.pub/fes/cms/2024/02/05/lenovo-yoga-pro-9i-16-gen-9-front.png",
+        "description": "Front view of 16-inch PureSight Pro 3.2K display in Luna Grey chassis",
+        "view_type": "open"
+      },
+      {
+        "url": "https://p1-ofp.static.pub/fes/cms/2024/02/05/lenovo-yoga-pro-9i-16-gen-9-ports.png",
+        "description": "Left and right side view highlighting full-size SD card reader, HDMI 2.1, and Thunderbolt 4",
+        "view_type": "ports"
+      }
+    ],
+    "os": "Windows 11 Home",
+    "screen": {
+      "size_inches": 16.0,
+      "resolution": "3200x2000",
+      "resolution_horizontal": 3200,
+      "resolution_vertical": 2000,
+      "aspect_ratio": "16:10",
+      "refresh_rate_hz": 165,
+      "panel_type": "PureSight Pro 3.2K Mini-LED / OLED (Delta E < 1)",
+      "touchscreen": true,
+      "brightness_nits": 600
+    },
+    "dimensions": {
+      "width_in": 14.28,
+      "depth_in": 9.99,
+      "thickness_in": 0.70,
+      "formatted": "14.28 x 9.99 x 0.70 in"
+    },
+    "weight_lbs": 4.25,
+    "battery": {
+      "capacity_wh": 84.0,
+      "estimated_life_hours": 11.0
+    },
+    "processor": {
+      "model": "Intel Core Ultra 9 285H",
+      "brand": "Intel",
+      "cores": 16,
+      "threads": 22,
+      "boost_clock_ghz": 5.4,
+      "architecture": "x86_64",
+      "npu_tops": 13.0
+    },
+    "ram": {
+      "capacity_gb": 32,
+      "type": "LPDDR5X-7467",
+      "speed_mhz": 7467,
+      "upgradable": false
+    },
+    "storage": {
+      "capacity_gb": 1024,
+      "type": "PCIe Gen 4 NVMe SSD",
+      "upgradable": true
+    },
+    "graphics": {
+      "gpu": "NVIDIA GeForce RTX 5060 Laptop GPU",
+      "type": "discrete",
+      "vram_gb": 8
+    },
+    "ports": [
+      "1x Thunderbolt 4 / USB4 (40Gbps, PD 3.0, DP 1.4)",
+      "1x USB 3.2 Gen 2 Type-C (10Gbps, PD 3.0, DP 1.4)",
+      "2x USB 3.2 Gen 1 Type-A",
+      "1x HDMI 2.1 (up to 4K@120Hz / 8K@60Hz)",
+      "1x Full-size SD Card Reader (UHS-II, 312 MB/s)",
+      "1x 3.5mm Headphone combo jack",
+      "1x Slim-tip DC-in power jack"
+    ],
+    "webcam": "5MP IR webcam with electronic privacy shutter and quad-microphone array",
+    "special_features": [
+      "Optimized for Adobe Premiere Pro with NVIDIA Studio drivers and CUDA/NVENC acceleration",
+      "Dual color-calibrated display profiles covering 100% Adobe RGB, 100% DCI-P3, and 100% sRGB",
+      "Full-size high-speed SD card reader for rapid camera footage ingest",
+      "HDMI 2.1 and Thunderbolt 4 support for multiple high-resolution color-grading external monitors",
+      "6-speaker audio system with 4 subwoofers for professional audio monitoring"
+    ]
+  },
+  {
+    "id": "asus_expertbook_p5_14",
+    "name": "Asus ExpertBook P5 (14\", Core Ultra 7 258V)",
+    "brand": "Asus",
+    "model_number": "P5405CSA",
+    "price_usd": 1099.99,
+    "source_url": "https://www.nytimes.com/wirecutter/reviews/best-laptops/#the-best-business-laptop",
+    "images": [
+      {
+        "url": "https://dlcdnwebimgs.asus.com/gain/3DCE7692-7E59-42E1-A708-2A8BAE3A82BB/w1000/h732",
+        "description": "Front open view of Asus ExpertBook P5 business laptop in Cool Silver chassis",
+        "view_type": "open"
+      },
+      {
+        "url": "https://dlcdnwebimgs.asus.com/gain/972175B5-C2B1-4A59-AC16-09C340B9A57D/w1000/h732",
+        "description": "Side ports view showing dual Thunderbolt 4 ports, HDMI 2.1, and Kensington lock",
+        "view_type": "ports"
+      }
+    ],
+    "os": "Windows 11 Pro",
+    "screen": {
+      "size_inches": 14.0,
+      "resolution": "2560x1600",
+      "resolution_horizontal": 2560,
+      "resolution_vertical": 1600,
+      "aspect_ratio": "16:10",
+      "refresh_rate_hz": 144,
+      "panel_type": "Anti-glare IPS 2.5K 144Hz",
+      "touchscreen": false,
+      "brightness_nits": 400
+    },
+    "dimensions": {
+      "width_in": 12.28,
+      "depth_in": 8.79,
+      "thickness_in": 0.59,
+      "formatted": "12.28 x 8.79 x 0.59 in"
+    },
+    "weight_lbs": 2.78,
+    "battery": {
+      "capacity_wh": 63.0,
+      "estimated_life_hours": 16.5
+    },
+    "processor": {
+      "model": "Intel Core Ultra 7 258V",
+      "brand": "Intel",
+      "cores": 8,
+      "threads": 8,
+      "boost_clock_ghz": 4.8,
+      "architecture": "x86_64",
+      "npu_tops": 47.0
+    },
+    "ram": {
+      "capacity_gb": 32,
+      "type": "LPDDR5X-8533 (On-Package Memory)",
+      "speed_mhz": 8533,
+      "upgradable": false
+    },
+    "storage": {
+      "capacity_gb": 1024,
+      "type": "PCIe Gen 4 NVMe SSD",
+      "upgradable": true
+    },
+    "graphics": {
+      "gpu": "Intel Arc 140V Graphics",
+      "type": "integrated",
+      "vram_gb": null
+    },
+    "ports": [
+      "2x Thunderbolt 4 / USB-C (supports display output and power delivery)",
+      "2x USB 3.2 Gen 2 Type-A",
+      "1x HDMI 2.1 TMDS",
+      "1x 3.5mm Headphone combo jack",
+      "1x Kensington Nano Security Slot"
+    ],
+    "webcam": "1080p FHD IR camera with Windows Hello and physical webcam shutter",
+    "special_features": [
+      "Wirecutter top pick for best business laptop",
+      "Tested 16.5-hour battery life on energy-efficient Intel Lunar Lake architecture",
+      "Lightweight 2.78 lb aluminum design with MIL-STD 810H military durability",
+      "Dual M.2 2280 SSD slots for expandable enterprise storage up to 3TB",
+      "Designed for serviceability and repair with modular internal components",
+      "Hardware-level TPM 2.0 and Windows 11 Pro security features"
+    ]
+  }
+]

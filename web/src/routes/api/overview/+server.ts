@@ -1,14 +1,7 @@
 import { json } from '@sveltejs/kit';
-import { cases, currentJob, rows, runTimings, settings } from '../../../lib/server/bench';
+import { currentJob } from '../../../lib/server/bench';
+import { historyRevision } from '../../../lib/server/results';
 
 export function GET() {
-  const config = settings();
-  return json({
-    rows: rows(), job: currentJob(), cases: cases(), runTimings: runTimings(),
-    sources: {
-      freetoken: { configured: Boolean(config.localBase), defaultModel: config.localModel },
-      openrouter: { configured: config.openrouterReady },
-      compatible: { configured: true }
-    }
-  });
+  return json({ job: currentJob(), revision: historyRevision() });
 }

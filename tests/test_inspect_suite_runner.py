@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts/run-inspect-suite.py"
+from scripts.execution_plan import build_plan, save_plan
 SPEC = importlib.util.spec_from_file_location("inspect_suite_runner", SCRIPT)
 suite = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
@@ -26,10 +27,14 @@ class InspectSuiteRunnerTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             progress = Path(directory) / "progress.json"
+            plan_file = Path(directory) / "plan.json"
+            save_plan(plan_file, build_plan(suite=True))
             argv = ["run-inspect-suite.py", "--source", "freetoken", "--model", "fixture-model",
                     "--base-url", "http://127.0.0.1:1919/v1", "--run-id", "20261011000000001",
+                    "--max-calls", str(build_plan(suite=True).max_calls),
+                    "--plan-file", str(plan_file),
                     "--progress-file", str(progress)]
-            with patch.object(sys, "argv", argv), patch.object(suite.subprocess, "run", side_effect=run):
+            with patch.object(sys, "argv", argv), patch.object(suite, "run_bounded", side_effect=run):
                 result = suite.main()
             state = json.loads(progress.read_text())
 

@@ -64,36 +64,43 @@ def pi_instruction_agent() -> Agent:
     return execute
 
 
+def scope_objective_checks(global_text: str, project_text: str) -> dict[str, bool]:
+    """Only inspect observable placement; semantic rule quality needs a reviewer."""
+    global_rest = global_text.replace(GLOBAL_SENTINEL, "", 1).strip()
+    project_rest = project_text.replace(PROJECT_SENTINEL, "", 1).strip()
+    return {
+        "objective_preserved_global": GLOBAL_SENTINEL in global_text,
+        "objective_preserved_project": PROJECT_SENTINEL in project_text,
+        "objective_scoped_placement": bool(global_rest and project_rest),
+    }
+
+
 @scorer(metrics=[accuracy()])
 def instruction_scope_state() -> object:
     async def score(state: TaskState, target: Target) -> Score:
         global_text = await sandbox().read_file(GLOBAL_PATH)
         project_text = await sandbox().read_file(PROJECT_PATH)
-        def has_general_rule(text: str) -> bool:
-            lower = text.lower()
-            return (
-                ("brittle" in lower or "hacky" in lower)
-                and ("research" in lower or "investigate" in lower)
-                and ("prompt" in lower or "immediate" in lower or "early" in lower)
-            )
-        correct = (
-            GLOBAL_SENTINEL in global_text
-            and PROJECT_SENTINEL in project_text
-            and has_general_rule(global_text)
-            and has_general_rule(project_text)
-            and "staging catalog" not in global_text.lower()
-            and "staging catalog" in project_text.lower()
-        )
+        checks = scope_objective_checks(global_text, project_text)
+        objective_passed = all(checks.values())
         return Score(
-            value=1 if correct else 0,
+            value=0,
             metadata={
+                **checks,
+                "objective_checks_passed": objective_passed,
+                "semantic_review_required": objective_passed,
+                "semantic_review_status": "pending" if objective_passed else "not_applicable",
+                "semantic_review_reason": (
+                    "Review full brittle-workaround rule, prompt risk explanation, research before "
+                    "extension, negation, and project-only catalog permission scope."
+                    if objective_passed else None
+                ),
                 "harness_tool_calls": store().get("pi_tool_calls", 0),
                 "harness_tool_errors": store().get("pi_tool_errors", 0),
                 "harness_tool_names": store().get("pi_tool_names", []),
             },
             explanation=(
-                "Rule and project permission were scoped correctly in disposable Pi instruction files."
-                if correct else "Disposable instruction files did not meet the pinned scope assertions."
+                "Objective file checks passed; semantic instruction quality requires rubric review."
+                if objective_passed else "Disposable instruction files failed objective placement or preservation checks."
             ),
         )
     return score
@@ -115,5 +122,5 @@ def pi_scope() -> Task:
         sandbox=("docker", str(ROOT / "inspect/pi/compose.yaml")),
         time_limit=200,
         display_name="Mattbench agent instructions: Pi in disposable sandbox",
-        version="1",
+        version="2",
     )

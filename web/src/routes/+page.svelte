@@ -1,30 +1,34 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { ArrowUpRight, ChartNoAxesCombined, Clock3, Radio, Network, Search, ArrowRight, Info } from '@lucide/svelte';
+  import { ArrowUpRight, ChartNoAxesCombined, Clock3, Radio, Network, Search, ArrowRight, Info, ChevronDown, Check } from '@lucide/svelte';
   import type { PageProps } from './$types';
+  import type { Source, ModelOption as Model, Row, BenchmarkCase, CaseTiming, Job } from '../lib/contracts';
+  import { parseHistory, parseJob, parseOverview } from '../lib/contracts';
+  import { groupRuns, matrixRuns, tokens, type RecordedRun } from '../lib/results';
+  import { startPolling } from '../lib/polling';
+  import ConsoleStatus from '../lib/ConsoleStatus.svelte';
+  import JobStatus from '../lib/JobStatus.svelte';
+  import PaidGuard from '../lib/PaidGuard.svelte';
+  import BillingStatus from '../lib/BillingStatus.svelte';
   import './console.css';
 
-  type Source = 'freetoken' | 'openrouter' | 'compatible';
-  type Model = { id: string; name: string; contextLength?: number };
-  type RunTiming = { setup_seconds?: number; evaluation_seconds?: number; teardown_seconds?: number; total_wall_seconds?: number };
-  type Row = { task: string; run_id: string; launcher_run_id?: string; sample_id: string; prompt_variant: string; model: string; concrete_response_model?: string; routed_models?: string[]; providers?: string[]; passed: boolean | null; score_explanation?: string; score_metadata?: Record<string, { state_correct?: boolean; trace_valid?: boolean }>; latency_seconds?: number; model_calls?: number; usage?: Record<string, { total_tokens?: number; total_cost?: number | null }>; started_at?: string; inference?: { temperature?: number; max_tokens?: number; max_retries?: number; timeout?: number }; inspect_version?: string; task_version?: string; fixture?: string; log_file?: string; run_timing?: RunTiming };
-  type BenchmarkCase = { id: string; name: string; category: string; suite: 'smoke' | 'ha'; fixture: string; maxModelCalls?: number };
-  type CaseTiming = { case_id: string; status: string; setup_seconds: number; evaluation_seconds: number; teardown_seconds: number; total_wall_seconds: number };
-  type Job = { id: string; status: 'running' | 'complete' | 'failed' | 'interrupted'; phase?: string; source: Source; model: string; caseId?: string; currentCaseId?: string; completedCases?: { caseId: string; status: string; passed?: boolean; modelCalls?: number; message?: string }[]; completedCount?: number; totalCases?: number; message?: string; error?: string };
   let { data }: PageProps = $props();
-  let refreshedRows = $state.raw<Row[] | null>(null);
-  let refreshedJob = $state.raw<Job | null | undefined>(undefined);
-  let refreshedTimings = $state.raw<CaseTiming[] | null>(null);
-  let rows = $derived(refreshedRows ?? (data.rows as Row[]));
-  let job = $derived(refreshedJob === undefined ? (data.job as Job | null) : refreshedJob);
-  let timings = $derived(refreshedTimings ?? (data.runTimings as CaseTiming[]));
+  let rows = $state.raw<Row[]>([]);
+  let observedJob = $state.raw<Job | null | undefined>(undefined);
+  let job = $derived(observedJob === undefined ? data.job : observedJob);
+  let timings = $state.raw<CaseTiming[]>([]);
+  let warnings = $state.raw<string[]>([]);
+  let connectionError = $state('');
+  let historyError = $state('');
+  let loadedRevision = $state('');
+  let jobGeneration = 0;
+  let polling: { stop: () => void; wake: () => void } | undefined;
   let source = $state<Source>('freetoken');
   let baseUrl = $state('http://127.0.0.1:11434/v1');
   let query = $state('');
   let catalog = $state.raw<Model[]>([]);
   let selectedModel = $state('');
   let variant = $state<'base' | 'careful' | 'both'>('both');
-  let caseId = $state('all');
   let capUsd = $state(20);
   let capConfirmed = $state(false);
   let loading = $state(false);
@@ -38,73 +42,112 @@
   let catalogRequest = 0;
   const sourceNames: Record<Source, string> = { freetoken: 'FreeToken', openrouter: 'OpenRouter', compatible: 'Other endpoint' };
   let availableCases = $derived(data.cases as BenchmarkCase[]);
-  let caseGroups = $derived.by(() => {
-    const groups: Record<string, BenchmarkCase[]> = Object.create(null) as Record<string, BenchmarkCase[]>;
-    for (const entry of availableCases.filter((item) => item.suite === 'ha')) {
-      groups[entry.category] = [...(groups[entry.category] || []), entry];
-    }
-    return Object.entries(groups).map(([id, entries]) => ({ id, label: id === 'smart_home' ? 'Smart home' : id.replaceAll('_', ' '), entries }));
+  type CategoryId = 'smart_home' | 'laptop_shopping' | 'smoke';
+  interface CategoryInfo {
+    id: CategoryId;
+    label: string;
+    description: string;
+    badge: string;
+    cases: BenchmarkCase[];
+  }
+  let selectionMode = $state<'all' | 'categories'>('all');
+  let selectedCategoryIds = $state<CategoryId[]>([]);
+  let accordionOpen = $state(false);
+  let categories = $derived.by<CategoryInfo[]>(() => {
+    const smartHomeCases = availableCases.filter((c) => c.category === 'smart_home' || c.suite === 'ha');
+    const laptopCases = availableCases.filter((c) => c.category === 'laptop_shopping' || c.suite === 'laptop');
+    const smokeCases = availableCases.filter((c) => c.suite === 'smoke');
+    return [
+      {
+        id: 'smart_home',
+        label: 'Smart home',
+        description: 'Reading lamp and MXZ coordinator (real ha-mcp in synthetic home)',
+        badge: 'SMART HOME',
+        cases: smartHomeCases
+      },
+      {
+        id: 'laptop_shopping',
+        label: 'Laptop shopping',
+        description: '10-laptop specs & pictures, 10 user personas, and trick questions (ALL / NONE)',
+        badge: 'LAPTOP',
+        cases: laptopCases
+      },
+      {
+        id: 'smoke',
+        label: 'Smoke questions',
+        description: 'Pinned quick reasoning checks (strawberry count, car wash transport)',
+        badge: 'SMOKE',
+        cases: smokeCases
+      }
+    ];
   });
-  let visibleCases = $derived(caseId === 'all' ? availableCases : availableCases.filter((entry) => entry.suite === (caseId === 'smoke' ? 'smoke' : 'ha') && (caseId === 'smoke' || entry.id === caseId)));
+  function selectAll() {
+    selectionMode = 'all';
+    selectedCategoryIds = [];
+  }
+  function toggleCategory(catId: CategoryId) {
+    selectionMode = 'categories';
+    if (selectedCategoryIds.includes(catId)) {
+      selectedCategoryIds = selectedCategoryIds.filter((id) => id !== catId);
+    } else {
+      selectedCategoryIds = [...selectedCategoryIds, catId];
+    }
+  }
+  let visibleCases = $derived.by(() => {
+    if (selectionMode === 'all') return availableCases;
+    return availableCases.filter((c) => {
+      if (selectedCategoryIds.includes('smart_home') && (c.category === 'smart_home' || c.suite === 'ha')) return true;
+      if (selectedCategoryIds.includes('laptop_shopping') && (c.category === 'laptop_shopping' || c.suite === 'laptop')) return true;
+      if (selectedCategoryIds.includes('smoke') && c.suite === 'smoke') return true;
+      return false;
+    });
+  });
   let caseTiming = $derived(timings.find((entry) => entry.case_id === caseId));
-  let totalCallCap = $derived(availableCases.filter((entry) => entry.suite === 'ha').reduce((sum, entry) => sum + (entry.maxModelCalls || 0), 2));
-  let maxCalls = $derived(caseId === 'all' ? totalCallCap : caseId === 'smoke' ? variant === 'both' ? 4 : 2 : availableCases.find((entry) => entry.id === caseId)?.maxModelCalls || 0);
-  let canRun = $derived(Boolean(selectedModel) && maxCalls > 0 && !loading && job?.status !== 'running' && (source !== 'openrouter' || (data.sources.openrouter.configured && capConfirmed && capUsd > 0 && capUsd <= 20)));
+  let smokeCallCap = $derived(availableCases.filter((entry) => entry.suite === 'smoke').reduce((sum, entry) => sum + entry.maxModelCalls, 0));
+  let activeCaseId = $derived.by(() => {
+    if (selectionMode === 'all') return 'all';
+    if (selectedCategoryIds.length === 0) return '';
+    if (selectedCategoryIds.length === categories.length) return 'all';
+    if (selectedCategoryIds.length === 1) {
+      if (selectedCategoryIds[0] === 'smart_home') return 'smart_home';
+      if (selectedCategoryIds[0] === 'laptop_shopping') return 'laptop';
+      if (selectedCategoryIds[0] === 'smoke') return 'smoke';
+    }
+    return selectedCategoryIds.join(',');
+  });
+  let caseId = $derived(activeCaseId);
+  let maxCalls = $derived.by(() => {
+    if (selectionMode === 'all') {
+      return availableCases.reduce((sum, entry) => sum + entry.maxModelCalls, 0);
+    }
+    if (selectedCategoryIds.length === 1 && selectedCategoryIds[0] === 'smoke') {
+      return smokeCallCap * (variant === 'both' ? 2 : 1);
+    }
+    return visibleCases.reduce((sum, entry) => sum + entry.maxModelCalls, 0);
+  });
+  // OpenRouter marks zero-cost endpoints with the ':free' model-ID suffix; the paid guard only gates paid runs.
+  let paidRun = $derived(!selectedModel.endsWith(':free'));
+  let canRun = $derived(Boolean(selectedModel) && maxCalls > 0 && !loading && job?.status !== 'running' && (source !== 'openrouter' || (data.sources.openrouter.configured && (!paidRun || (capConfirmed && capUsd > 0 && capUsd <= 20)))));
   function name(model: string) { return model.replace(/^openai-api\/(freetoken|openrouter|compatible)\//, ''); }
   function short(model: string) { const text = name(model); return text.length > 31 ? `${text.slice(0, 29)}…` : text; }
   function route(model: string) { return model.startsWith('openai-api/openrouter/') ? 'OpenRouter' : model.startsWith('openai-api/compatible/') ? 'Other endpoint' : 'FreeToken'; }
-  function tokens(row: Row) { return Object.values(row.usage || {}).reduce((total, use) => total + (use.total_tokens || 0), 0); }
-  function cost(row: Row): number | null { const values = Object.values(row.usage || {}).map((use) => use.total_cost).filter((value): value is number => typeof value === 'number'); return values.length ? values.reduce((sum, value) => sum + value, 0) : null; }
   function fmt(value: number) { return new Intl.NumberFormat('en-US').format(value); }
   function secs(value?: number) { return value == null ? '—' : `${value.toFixed(value < 10 ? 1 : 0)}s`; }
   function taskName(id: string) { return availableCases.find((entry) => entry.id === id)?.name || id.replaceAll('_', ' '); }
-  function runKey(row: Row) { return JSON.stringify([row.launcher_run_id || row.run_id, row.model]); }
   function runTime(value: string) {
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? 'Time not reported' : new Intl.DateTimeFormat('en-US', {
       month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'UTC', timeZoneName: 'short'
     }).format(date);
   }
-  let runs = $derived.by(() => {
-    const groups: Record<string, Row[]> = Object.create(null) as Record<string, Row[]>;
-    for (const row of rows.filter((entry) => !entry.model.startsWith('mockllm/'))) {
-      const key = runKey(row);
-      groups[key] = [...(groups[key] || []), row];
-    }
-    return Object.entries(groups).map(([key, group]) => {
-      const ordered = [...group].sort((a, b) => (a.started_at || '').localeCompare(b.started_at || ''));
-      return {
-        key, rows: ordered, model: ordered[0].model, runId: ordered[0].launcher_run_id || ordered[0].run_id,
-        startedAt: ordered[0].started_at || '', pass: ordered.filter((row) => row.passed === true).length,
-        scored: ordered.filter((row) => row.passed !== null).length,
-        unscored: ordered.filter((row) => row.passed === null).length,
-        prompts: [...new Set(ordered.map((row) => row.prompt_variant))].join(' + ')
-      };
-    }).sort((a, b) => b.startedAt.localeCompare(a.startedAt));
-  });
-  function runScore(run: (typeof runs)[number]) { return run.scored ? `${run.pass} of ${run.scored} passed` : 'No scored tasks'; }
-  function runLabel(run: (typeof runs)[number]) { return `${runTime(run.startedAt)} · ${name(run.model)} · ${runScore(run)}`; }
+  let runs = $derived(groupRuns(rows));
+  function runScore(run: RecordedRun) { return run.scored ? `${run.pass} of ${run.scored} passed` : 'No scored tasks'; }
+  function runLabel(run: RecordedRun) { return `${runTime(run.startedAt)} · ${name(run.model)} · ${runScore(run)}`; }
   let reportRuns = $derived(runs.filter((run) => run.rows.some((row) => availableCases.some((entry) => entry.id === row.sample_id)) && (filter === 'all' || (filter === 'hosted' ? route(run.model) === 'OpenRouter' : route(run.model) !== 'OpenRouter'))));
   let activityRuns = $derived(runs);
   let selectedReportRun = $derived(reportRuns.find((run) => run.key === selectedReportRunKey) || reportRuns[0]);
   let selectedActivityRun = $derived(activityRuns.find((run) => run.key === selectedActivityRunKey) || activityRuns[0]);
-  let matrix = $derived.by(() => {
-    const groups: Record<string, Row[]> = Object.create(null) as Record<string, Row[]>;
-    for (const row of (selectedReportRun?.rows || []).filter((entry) => availableCases.some((benchmark) => benchmark.id === entry.sample_id))) {
-      const key = row.prompt_variant;
-      groups[key] = [...(groups[key] || []), row];
-    }
-    return Object.values(groups).map((group) => {
-      const runId = group[0].launcher_run_id || group[0].run_id;
-      return {
-      key: `${group[0].model}|${group[0].prompt_variant}|${runId}`, runId, model: group[0].model, prompt: group[0].prompt_variant,
-      cases: Object.fromEntries(group.map((row) => [row.sample_id, row])) as Record<string, Row>,
-      pass: group.filter((r) => r.passed === true).length, scored: group.filter((r) => r.passed !== null).length,
-      time: group.reduce((sum, r) => sum + (r.latency_seconds || 0), 0), setup: group.reduce((sum, r) => sum + (r.run_timing?.setup_seconds || 0), 0), cleanup: group.reduce((sum, r) => sum + (r.run_timing?.teardown_seconds || 0), 0), calls: group.every((r) => r.model_calls !== undefined) ? group.reduce((sum, r) => sum + (r.model_calls || 0), 0) : null, tokens: group.reduce((sum, r) => sum + tokens(r), 0), cost: group.every((r) => cost(r) !== null) ? group.reduce((sum, r) => sum + (cost(r) || 0), 0) : null, providers: [...new Set(group.flatMap((r) => r.providers || []))], routedModels: [...new Set(group.flatMap((r) => r.routed_models || []))],
-      sample: group[0]
-      };
-    }).sort((a, b) => a.prompt.localeCompare(b.prompt));
-  });
+  let matrix = $derived(matrixRuns((selectedReportRun?.rows || []).filter((entry) => availableCases.some((benchmark) => benchmark.id === entry.sample_id))));
   let selectedRun = $derived(matrix.find((entry) => entry.key === selectedKey));
   let activeView = $state<'run' | 'results' | 'activity'>('run');
   let jobProgress = $derived(job?.totalCases ? Math.round(((job.completedCount || 0) / job.totalCases) * 100) : 0);
@@ -129,16 +172,66 @@
   }
   function chooseSource(next: Source) { ++catalogRequest; source = next; query = ''; selectedModel = ''; catalog = []; catalogError = ''; runError = ''; loading = false; if (next !== 'compatible') void loadModels(); }
   function search() { clearTimeout(searchTimer); searchTimer = setTimeout(() => void loadModels(), 260); }
-  function syncView() { const view = location.hash.slice(1); activeView = view === 'report' ? 'results' : view === 'activity' ? 'activity' : 'run'; }
-  async function refresh() { const response = await fetch('/api/overview', { cache: 'no-store' }); if (response.ok) { const body = await response.json(); refreshedRows = body.rows; refreshedJob = body.job; refreshedTimings = body.runTimings; } }
+  function syncView() {
+    const view = location.hash.slice(1);
+    activeView = view === 'report' ? 'results' : view === 'activity' ? 'activity' : 'run';
+    polling?.wake();
+  }
+  async function refresh(signal: AbortSignal) {
+    const generation = jobGeneration;
+    const response = await fetch('/api/overview', { cache: 'no-store', signal });
+    if (!response.ok) throw new Error(`Job status returned HTTP ${response.status}.`);
+    const body = parseOverview(await response.json());
+    if (signal.aborted) return;
+    if (generation === jobGeneration) observedJob = body.job;
+    if (activeView === 'run' || loadedRevision === body.revision) return;
+    try {
+      const result = await fetch(`/api/history?${new URLSearchParams({ revision: loadedRevision })}`, { cache: 'no-store', signal });
+      if (result.status === 304) return;
+      if (!result.ok) throw new Error(`History returned HTTP ${result.status}.`);
+      const history = parseHistory(await result.json());
+      if (signal.aborted) return;
+      rows = history.rows;
+      timings = history.runTimings;
+      warnings = history.warnings;
+      loadedRevision = history.revision;
+      historyError = '';
+    } catch (cause) {
+      if (signal.aborted) throw cause;
+      historyError = cause instanceof Error ? cause.message : 'History could not be loaded.';
+      throw cause;
+    }
+  }
   async function run() {
     runError = '';
+    jobGeneration += 1;
     try {
-      const response = await fetch('/api/runs', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ source, model: selectedModel, variant: caseId === 'smoke' ? variant : 'base', caseId, baseUrl: source === 'compatible' ? baseUrl : undefined, maxCalls, capUsd: source === 'openrouter' ? capUsd : undefined, capConfirmed: source === 'openrouter' ? capConfirmed : undefined }) });
-      const body = await response.json(); if (!response.ok) throw new Error(body.error || 'Could not start run.'); refreshedJob = body.job;
+      const response = await fetch('/api/runs', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ source, model: selectedModel, variant: caseId === 'smoke' ? variant : 'base', caseId, baseUrl: source === 'compatible' ? baseUrl : undefined, maxCalls, capUsd: source === 'openrouter' && paidRun ? capUsd : undefined, capConfirmed: source === 'openrouter' && paidRun ? capConfirmed : undefined }) });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || 'Could not start run.');
+      jobGeneration += 1;
+      observedJob = parseJob(body.job);
+      polling?.wake();
     } catch (cause) { runError = cause instanceof Error ? cause.message : 'Could not start run.'; }
   }
-  onMount(() => { syncView(); window.addEventListener('hashchange', syncView); void loadModels(); const timer = setInterval(() => { void refresh(); }, 1800); return () => { window.removeEventListener('hashchange', syncView); clearInterval(timer); clearTimeout(searchTimer); }; });
+  onMount(() => {
+    syncView();
+    window.addEventListener('hashchange', syncView);
+    void loadModels();
+    polling = startPolling({
+      poll: refresh,
+      interval: () => document.hidden ? 60000 : job?.status === 'running' ? 1800 : 15000,
+      onError: (message) => connectionError = message
+    });
+    const visible = () => { if (!document.hidden) polling?.wake(); };
+    document.addEventListener('visibilitychange', visible);
+    return () => {
+      window.removeEventListener('hashchange', syncView);
+      document.removeEventListener('visibilitychange', visible);
+      polling?.stop();
+      clearTimeout(searchTimer);
+    };
+  });
 </script>
 
 <div class="shell">
@@ -148,7 +241,8 @@
     <div class="rail-foot"><i></i> LOCAL CONSOLE</div>
   </aside>
   <main id="top">
-    <header class="console-header"><h1>Benchmark console<span>.</span></h1><div class="console-facts"><span><strong>{availableCases.length}</strong> pinned cases</span><span><strong>{runs.length}</strong> recorded runs</span><span>Inspect AI</span></div></header>
+    <header class="console-header"><h1>Benchmark console<span>.</span></h1><div class="console-facts"><span><strong>{availableCases.length}</strong> pinned cases</span><span><strong>{loadedRevision ? runs.length : '—'}</strong> {loadedRevision ? 'recorded runs' : 'history on demand'}</span><span>Inspect AI</span></div></header>
+    <ConsoleStatus {connectionError} {historyError} {warnings} />
     {#if job?.status === 'running'}
       <div class="run-live" role="status" aria-live="polite">
         <span class="run-live-spinner" aria-hidden="true"></span>
@@ -161,11 +255,108 @@
       <div class:single={activeView !== 'run'} class="workspace">
       <section class="run-panel" class:view-hidden={activeView !== 'run'} id="run" aria-labelledby="run-title">
         <div class="section-head"><div><h2 id="run-title">Set up a run<span>.</span></h2></div><b>{visibleCases.length} {visibleCases.length === 1 ? 'TASK' : 'TASKS'}</b></div>
-        <div class="field case-field"><div class="field-head"><strong>Choose a benchmark</strong><span>Pinned cases · {availableCases.length} total</span></div><div class="case-options" role="group" aria-label="Benchmark selection">
-          <button class="case-option everything" class:selected={caseId === 'all'} type="button" aria-pressed={caseId === 'all'} onclick={() => caseId = 'all'}><span><strong>Run everything</strong><small>Smoke questions and every smart home case</small></span><b>{availableCases.length} TASKS</b></button>
-          <button class="case-option" class:selected={caseId === 'smoke'} type="button" aria-pressed={caseId === 'smoke'} onclick={() => caseId = 'smoke'}><span><strong>Smoke questions</strong><small>{availableCases.filter((entry) => entry.suite === 'smoke').length} quick reasoning checks</small></span><b>SMOKE</b></button>
-          {#each caseGroups as group (group.id)}<div class="case-category"><strong>{group.label}</strong><span>{group.entries.length} {group.entries.length === 1 ? 'case' : 'cases'}</span></div>{#each group.entries as entry (entry.id)}<button class="case-option" class:selected={caseId === entry.id} type="button" aria-pressed={caseId === entry.id} onclick={() => caseId = entry.id}><span><strong>{entry.name}</strong><small>Real ha-mcp · fresh synthetic home</small></span><b>{group.label.toUpperCase()}</b></button>{/each}{/each}
-        </div>{#if caseId !== 'smoke'}<p class="case-hint">Each Home Assistant task starts with fresh synthetic state and real ha-mcp. All model sources are available.</p>{/if}{#if caseId !== 'all' && caseId !== 'smoke' && caseTiming}<p class="case-timing">Latest {caseTiming.status.replaceAll('_', ' ')} · setup {secs(caseTiming.setup_seconds)} · cleanup {secs(caseTiming.teardown_seconds)} · total {secs(caseTiming.total_wall_seconds)}</p>{/if}</div>
+        <div class="field case-field">
+          <div class="field-head">
+            <strong>Choose a benchmark</strong>
+            <span>{availableCases.length} total tasks across {categories.length} categories</span>
+          </div>
+          <div class="case-selection-wrapper">
+            <button
+              class="case-option everything"
+              class:selected={selectionMode === 'all'}
+              type="button"
+              aria-pressed={selectionMode === 'all'}
+              onclick={selectAll}
+            >
+              <span>
+                <strong>Run everything</strong>
+                <small>All {availableCases.length} tasks: Smoke questions, Smart home, and Laptop shopping</small>
+              </span>
+              <b>{availableCases.length} TASKS</b>
+            </button>
+
+            <div class="category-accordion-card">
+              <button
+                class="category-accordion-trigger"
+                class:active={selectionMode === 'categories'}
+                type="button"
+                aria-expanded={accordionOpen}
+                onclick={() => accordionOpen = !accordionOpen}
+              >
+                <div class="trigger-label">
+                  <span class="trigger-title">
+                    <strong>Select by category</strong>
+                    {#if selectionMode === 'categories' && selectedCategoryIds.length > 0}
+                      <span class="active-pill">{selectedCategoryIds.length} of {categories.length} SELECTED</span>
+                    {/if}
+                  </span>
+                  <small>Smart home, Laptop shopping, and Smoke questions</small>
+                </div>
+                <div class="trigger-meta">
+                  <span class="mode-badge">{selectionMode === 'categories' ? `${selectedCategoryIds.length} ACTIVE` : 'CATEGORIES'}</span>
+                  <span class="chevron" class:open={accordionOpen} aria-hidden="true"><ChevronDown size={18} /></span>
+                </div>
+              </button>
+
+              {#if accordionOpen}
+                <div class="category-accordion-body" role="group" aria-label="Category multi-choice selection">
+                  <p class="category-note">Select one or more categories below (mutually exclusive with Run Everything):</p>
+                  <div class="category-choices">
+                    {#each categories as cat (cat.id)}
+                      {@const isChecked = selectionMode === 'categories' && selectedCategoryIds.includes(cat.id)}
+                      <div class="category-card" class:checked={isChecked}>
+                        <label class="category-choice-header">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onchange={() => toggleCategory(cat.id)}
+                          />
+                          <span class="choice-checkbox" aria-hidden="true">
+                            {#if isChecked}<Check size={14} />{/if}
+                          </span>
+                          <div class="choice-text">
+                            <div class="choice-title-row">
+                              <strong>{cat.label}</strong>
+                              <span class="category-badge">{cat.badge}</span>
+                            </div>
+                            <small>{cat.description}</small>
+                          </div>
+                          <b class="task-count">{cat.cases.length} {cat.cases.length === 1 ? 'TASK' : 'TASKS'}</b>
+                        </label>
+
+                        {#if cat.id === 'smart_home'}
+                          <div class="category-subtasks">
+                            <span class="subtasks-label">Included tasks:</span>
+                            <ul>
+                              {#each cat.cases as sc (sc.id)}
+                                <li>
+                                  <code>{sc.name}</code>
+                                  <span>{sc.maxModelCalls} calls max · real ha-mcp</span>
+                                </li>
+                              {/each}
+                            </ul>
+                          </div>
+                        {/if}
+                      </div>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+            </div>
+          </div>
+
+          {#if selectionMode === 'categories' && selectedCategoryIds.length === 0}
+            <p class="case-hint warning">No categories selected. Check at least one category above, or select "Run everything".</p>
+          {:else if selectionMode === 'categories' && selectedCategoryIds.includes('smart_home')}
+            <p class="case-hint">Smart home tasks start with fresh synthetic state and real ha-mcp. All model sources are available.</p>
+          {:else if selectionMode === 'all'}
+            <p class="case-hint">Running everything evaluates smoke reasoning, smart home automation with real ha-mcp, and laptop shopping personas.</p>
+          {/if}
+
+          {#if caseTiming}
+            <p class="case-timing">Latest {caseTiming.status.replaceAll('_', ' ')} · setup {secs(caseTiming.setup_seconds)} · cleanup {secs(caseTiming.teardown_seconds)} · total {secs(caseTiming.total_wall_seconds)}</p>
+          {/if}
+        </div>
         <div class="field"><div class="field-head"><strong>Model source</strong><span>Choose where requests go</span></div><div class="source-grid" role="group" aria-label="Model source">
           {#each ['freetoken', 'openrouter', 'compatible'] as option (option)}<button type="button" class:selected={source === option} aria-pressed={source === option} onclick={() => chooseSource(option as Source)}><span class="symbol" aria-hidden="true">{#if option === 'freetoken'}<Radio size={22}/>{:else if option === 'openrouter'}<ArrowUpRight size={22}/>{:else}<Network size={22}/>{/if}</span><strong>{sourceNames[option as Source]}</strong><small>{option === 'freetoken' ? 'This machine' : option === 'openrouter' ? 'Hosted' : 'Private / LAN'}</small></button>{/each}
         </div></div>
@@ -174,10 +365,10 @@
           {#if catalogError}<div class="message error" role="alert">{catalogError} <button type="button" onclick={loadModels}>Retry</button></div>{:else if loading}<div class="catalog-empty">Checking available models…</div>{:else if !catalog.length}<div class="catalog-empty">{source === 'compatible' ? 'Enter an endpoint and connect to list its models.' : 'No matching models. Try another search.'}</div>{:else}<div class="model-list" role="radiogroup" aria-label="Available models">{#each catalog as option (option.id)}<label class:chosen={selectedModel === option.id}><input type="radio" name="model" value={option.id} bind:group={selectedModel} /><i></i><span><strong>{option.name}</strong><small>{option.id}</small></span>{#if option.contextLength}<em>{Math.round(option.contextLength / 1000)}K CTX</em>{/if}</label>{/each}</div>{/if}
         </div>
         {#if caseId === 'smoke'}<div class="field"><div class="field-head"><strong>Prompt treatment</strong><span>Same pinned questions</span></div><div class="variant-grid" role="group" aria-label="Prompt treatment">{#each [{ id: 'base', label: 'Base', sub: 'Original prompt' }, { id: 'careful', label: 'Careful', sub: 'Guided system note' }, { id: 'both', label: 'Compare both', sub: 'Side by side' }] as choice (choice.id)}<button type="button" class:selected={variant === choice.id} aria-pressed={variant === choice.id} onclick={() => variant = choice.id as typeof variant}><strong>{choice.label}</strong><small>{choice.sub}</small></button>{/each}</div></div>{/if}
-        {#if source === 'openrouter'}<div class="paid"><h3><span>$</span> Paid run guard</h3><p>OpenRouter's workspace cap is the dollar stop. Up to {maxCalls} model calls; API retries are disabled. Each Home Assistant task also stops after 3 minutes.</p><label for="cap">Active workspace cap (USD)</label><input id="cap" type="number" min="0.01" max="20" step="0.01" bind:value={capUsd} /><label class="check"><input type="checkbox" bind:checked={capConfirmed} /> I confirm this cap is active in OpenRouter.</label>{#if !data.sources.openrouter.configured}<p class="warning">Add OPENROUTER_API_KEY to the ignored .env to enable hosted runs.</p>{/if}</div>{/if}
+        {#if source === 'openrouter' && (paidRun || !data.sources.openrouter.configured)}<PaidGuard {maxCalls} configured={data.sources.openrouter.configured} paid={paidRun} bind:capUsd bind:capConfirmed />{/if}
         <div class="run-actions"><div class="call-count"><strong>{maxCalls}</strong><small>MAX MODEL<br />CALLS</small></div><button class="run-button" type="button" disabled={!canRun} onclick={run}><span>{job?.status === 'running' ? 'RUN IN PROGRESS' : caseId === 'all' ? 'RUN EVERYTHING' : 'RUN BENCHMARK'}</span><ArrowRight size={19} aria-hidden="true"/></button></div>
         {#if runError}<div class="message error" role="alert">{runError}</div>{/if}
-        {#if job}<div class:working={job.status === 'running'} class="job" role="status" aria-live="polite"><i></i><span><strong>{job.status === 'running' ? `Run ${jobPhase}` : job.status === 'complete' ? jobResults.length ? `Run finished · ${jobPassed}/${jobResults.length} passed` : 'Run finished' : job.status === 'interrupted' ? 'Run interrupted' : 'Run stopped'}</strong><small>{job.currentCaseId ? `${taskName(job.currentCaseId)} · ` : ''}{job.message || job.error || (job.totalCases ? `${job.completedCount || 0} of ${job.totalCases} steps finished` : `${sourceNames[job.source]} · ${short(job.model)}`)}</small>{#if job.totalCases}<span class="progress-track" role="progressbar" aria-label="Benchmark progress" aria-valuemin="0" aria-valuemax={job.totalCases} aria-valuenow={job.completedCount || 0}><i style:transform={`scaleX(${jobProgress / 100})`}></i></span>{/if}{#if job.completedCases?.length}<span class="case-status-list">{#each job.completedCases as done (done.caseId)}<span class:failed={done.status === 'failed' || done.passed === false}>{done.status === 'failed' ? 'ERROR' : done.passed === true ? 'PASS' : done.passed === false ? 'FAIL' : 'DONE'} · {taskName(done.caseId)}{done.modelCalls !== undefined ? ` · ${done.modelCalls} calls` : ''}</span>{/each}</span>{/if}</span>{#if job.status !== 'running'}<button type="button" onclick={refresh}>Refresh</button>{/if}</div>{/if}
+        {#if job}<JobStatus {job} resultsCount={jobResults.length} passedCount={jobPassed} {taskName} refresh={() => polling?.wake()} />{/if}
       </section>
       <section class="report-panel" id="report" aria-labelledby="report-title">
         <div class:hidden-view={activeView === 'activity'}>
@@ -193,6 +384,11 @@
               </tr>
             {/each}
           </tbody></table></div>
+        {:else if !loadedRevision}
+          <div class="empty">
+            <strong>{activeView === 'run' ? 'Results load on demand.' : historyError ? 'Results could not be loaded.' : 'Loading result history…'}</strong>
+            {#if activeView === 'run'}<p><a href="#report">Open Results</a> to read local run history.</p>{/if}
+          </div>
         {:else}<div class="empty"><div aria-hidden="true">×</div><strong>No runs in this view yet.</strong><p>Choose another source filter, or run a pinned benchmark to see its task results here.</p></div>{/if}
         {#if selectedRun}
           <div class="run-detail" aria-label="Selected run details"><div class="detail-head"><h3>Run details</h3><button type="button" onclick={() => selectedKey = ''}>Close</button></div><div class="detail-cases"><strong>Task outcomes</strong>{#each availableCases as benchmark (benchmark.id)}{@const result = selectedRun.cases[benchmark.id]}{#if result}<div><span>{benchmark.name}</span><b class:pass={result.passed === true} class:miss={result.passed === false}>{result.passed === true ? 'PASS' : result.passed === false ? 'FAIL' : 'UNSCORED'}</b><small>{result.model_calls ?? '—'} calls · {secs(result.latency_seconds)}{result.score_metadata?.synthetic_ha_state?.state_correct === true ? ' · Final state reached' : ''}{result.score_metadata?.synthetic_ha_state?.trace_valid === false ? ' · Tool sequence failed' : ''}{result.score_explanation ? ` · ${result.score_explanation}` : ''}</small></div>{/if}{/each}</div><dl>
@@ -204,6 +400,7 @@
             <div><dt>Inspect log</dt><dd>{selectedRun.sample.log_file || 'Not reported'}</dd></div>
             {#if selectedRun.sample.run_timing}<div><dt>Container setup / cleanup</dt><dd>{secs(selectedRun.sample.run_timing.setup_seconds)} / {secs(selectedRun.sample.run_timing.teardown_seconds)}</dd></div><div><dt>Evaluation / wall time</dt><dd>{secs(selectedRun.sample.run_timing.evaluation_seconds)} / {secs(selectedRun.sample.run_timing.total_wall_seconds)}</dd></div>{/if}
           </dl></div>
+          <BillingStatus rows={Object.values(selectedRun.cases)} />
         {/if}
         </div><div class="activity" class:hidden-view={activeView !== 'activity'} id="activity"><div class="activity-head"><h3>Activity</h3><span>{activityRuns.length} {activityRuns.length === 1 ? 'RUN' : 'RUNS'}</span></div>{#if selectedActivityRun}<div class="run-picker"><label for="activity-run">Choose a run</label><select id="activity-run" value={selectedActivityRun.key} onchange={(event) => selectedActivityRunKey = event.currentTarget.value}>{#each activityRuns as run (run.key)}<option value={run.key}>{runLabel(run)}</option>{/each}</select><div class="run-picker-summary"><strong>{name(selectedActivityRun.model)}</strong><span>{runTime(selectedActivityRun.startedAt)} · {selectedActivityRun.prompts} prompt · {runScore(selectedActivityRun)}{selectedActivityRun.unscored ? ` · ${selectedActivityRun.unscored} unscored` : ''}</span><small>Run {selectedActivityRun.runId} · {selectedActivityRun.rows.length} task {selectedActivityRun.rows.length === 1 ? 'record' : 'records'}</small></div></div>{#each selectedActivityRun.rows as row (`${row.run_id}-${row.sample_id}-${row.prompt_variant}`)}<div class="activity-row"><i class:good={row.passed === true} class:bad={row.passed === false}></i><div><strong>{taskName(row.sample_id)}</strong><small>{row.prompt_variant} prompt · {runTime(row.started_at || '')}{row.score_explanation ? ` · ${row.score_explanation}` : ''}</small></div><aside><strong>{row.passed === true ? 'PASS' : row.passed === false ? 'FAIL' : 'UNSCORED'}</strong><small>{secs(row.latency_seconds)} · {row.model_calls ?? '—'} calls · {fmt(tokens(row))} tok</small></aside></div>{/each}{:else}<p class="activity-empty">Run a benchmark to build an activity trail.</p>{/if}</div>
       </section>

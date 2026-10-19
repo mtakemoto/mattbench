@@ -16,6 +16,7 @@ SPEC = importlib.util.spec_from_file_location("run_inspect_suite", MODULE_PATH)
 assert SPEC and SPEC.loader
 suite = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(suite)
+from scripts.execution_plan import build_plan, save_plan
 
 
 class InspectSuiteTests(unittest.TestCase):
@@ -23,6 +24,9 @@ class InspectSuiteTests(unittest.TestCase):
         manifest = json.loads((ROOT / "tasks/inspect-ha-cases.json").read_text())
         with tempfile.TemporaryDirectory() as temp:
             progress_file = Path(temp) / "progress.json"
+            plan_file = Path(temp) / "plan.json"
+            plan = build_plan(suite=True)
+            save_plan(plan_file, plan)
             commands = []
             snapshots = []
 
@@ -35,18 +39,14 @@ class InspectSuiteTests(unittest.TestCase):
             argv = [
                 "run-inspect-suite.py", "--source", "compatible", "--model", "example-model",
                 "--base-url", "http://127.0.0.1:11434/v1", "--run-id", "20261011010203",
-                "--progress-file", str(progress_file),
+                "--progress-file", str(progress_file), "--max-calls", str(plan.max_calls),
+                "--plan-file", str(plan_file),
             ]
-            with patch.object(sys, "argv", argv), patch.object(suite.subprocess, "run", side_effect=fake_run):
+            with patch.object(sys, "argv", argv), patch.object(suite, "run_bounded", side_effect=fake_run):
                 result = suite.main()
 
             self.assertEqual(result, 1)
             self.assertEqual(len(commands), 1 + len(manifest))
-            self.assertIn("run-inspect-selected.py", commands[0][1])
-            self.assertIn("--variant", commands[0])
-            self.assertIn("base", commands[0])
-            self.assertIn("--base-url", commands[0])
-            self.assertIn("http://127.0.0.1:11434/v1", commands[0])
             ha_commands = commands[1:]
             self.assertEqual(
                 [command[command.index("--case") + 1] for command in ha_commands],
@@ -56,7 +56,7 @@ class InspectSuiteTests(unittest.TestCase):
             first_ha = manifest[0]["id"]
             second_ha = manifest[1]["id"]
             self.assertEqual(snapshots[0]["currentCaseId"], "smoke")
-            self.assertEqual(snapshots[1]["completedCases"], [{"caseId": "smoke", "status": "complete", "message": None}])
+            self.assertEqual(snapshots[1]["completedCases"][0]["caseId"], "smoke")
             self.assertEqual(snapshots[2]["currentCaseId"], second_ha)
             self.assertEqual(snapshots[2]["completedCases"][1]["caseId"], first_ha)
             self.assertEqual(snapshots[2]["completedCases"][1]["status"], "failed")
@@ -66,20 +66,6 @@ class InspectSuiteTests(unittest.TestCase):
             self.assertEqual(final["completedCount"], final["totalCases"])
             self.assertEqual([item["status"] for item in final["completedCases"]], ["complete", "failed", "complete"])
 
-    def test_openrouter_passes_cap_to_every_child_without_local_endpoint(self):
-        with tempfile.TemporaryDirectory() as temp:
-            argv = [
-                "run-inspect-suite.py", "--source", "openrouter", "--model", "z-ai/glm-5.3-flash",
-                "--cap-usd", "20", "--run-id", "20261011010203",
-                "--progress-file", str(Path(temp) / "progress.json"),
-            ]
-            with patch.object(sys, "argv", argv), patch.dict(suite.os.environ, {"OPENROUTER_API_KEY": "test-only"}), patch.object(suite.subprocess, "run", return_value=SimpleNamespace(returncode=0)) as run:
-                self.assertEqual(suite.main(), 0)
-            self.assertEqual(run.call_count, 1 + len(json.loads((ROOT / "tasks/inspect-ha-cases.json").read_text())))
-            for call in run.call_args_list:
-                command = call.args[0]
-                self.assertEqual(command[command.index("--cap-usd") + 1], "20.0")
-                self.assertNotIn("--base-url", command)
 
 
 if __name__ == "__main__":

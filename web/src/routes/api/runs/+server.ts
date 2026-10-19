@@ -1,5 +1,6 @@
 import { json } from '@sveltejs/kit';
-import { models, startJob, type Source } from '../../../lib/server/bench';
+import { models, startJob } from '../../../lib/server/bench';
+import type { Source } from '../../../lib/contracts';
 
 export async function POST({ request, url }: { request: Request; url: URL }) {
   if (request.headers.get('origin') !== url.origin || !request.headers.get('content-type')?.startsWith('application/json')) {

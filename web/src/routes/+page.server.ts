@@ -1,10 +1,12 @@
 import type { PageServerLoad } from './$types';
-import { cases, currentJob, rows, runTimings, settings } from '../lib/server/bench';
+import { currentJob } from '../lib/server/bench';
+import { configuration } from '../lib/server/config';
+import { historyRevision } from '../lib/server/results';
 
 export const load: PageServerLoad = () => {
-  const config = settings();
+  const config = configuration();
   return {
-    rows: rows(), job: currentJob(), cases: cases(), runTimings: runTimings(),
-    sources: { freetoken: { configured: Boolean(config.localBase), defaultModel: config.localModel }, openrouter: { configured: config.openrouterReady }, compatible: { configured: true } }
+    job: currentJob(), cases: config.cases, revision: historyRevision(),
+    sources: { freetoken: { configured: Boolean(config.settings.localBase), defaultModel: config.settings.localModel }, openrouter: { configured: config.settings.openrouterReady }, compatible: { configured: true } }
   };
 };

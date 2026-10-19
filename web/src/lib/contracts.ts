@@ -1,0 +1,108 @@
+export type Source = 'freetoken' | 'openrouter' | 'compatible';
+export type Variant = 'base' | 'careful' | 'both';
+export type ModelOption = { id: string; name: string; contextLength?: number; promptPrice?: string; completionPrice?: string };
+export type BenchmarkCase = { id: string; name: string; category: string; suite: 'smoke' | 'ha' | 'laptop'; fixture: string; maxModelCalls: number };
+export type RunTiming = { setup_seconds?: number; evaluation_seconds?: number; teardown_seconds?: number; total_wall_seconds?: number };
+export type CaseTiming = RunTiming & { case_id: string; status: string };
+export type Billing = { complete: boolean; cost_usd: number | null; partial_cost_usd: number | null; generation_attempts?: number; unknown_attempts?: number; lookup_failures?: number };
+export type Row = {
+  task: string; run_id: string; launcher_run_id?: string | null; sample_id: string; category?: string;
+  prompt_variant: string; status: string; model: string; concrete_response_model?: string | null;
+  routed_models?: string[]; providers?: string[]; passed: boolean | null; billing?: Billing | null;
+  score_explanation?: string | null; score_metadata?: Record<string, { state_correct?: boolean; trace_valid?: boolean; semantic_review_required?: boolean }>;
+  latency_seconds?: number; model_calls?: number; tool_calls?: number;
+  usage?: Record<string, { total_tokens?: number; total_cost?: number | null }>;
+  started_at?: string; inference?: { temperature?: number; max_tokens?: number; max_retries?: number; timeout?: number };
+  inspect_version?: string | null; task_version?: string | number; fixture?: string; log_file?: string; run_timing?: RunTiming | null;
+};
+export type CaseResult = { caseId: string; status: 'complete' | 'failed'; passed?: boolean | null; modelCalls?: number; message?: string | null };
+export type Job = {
+  id: string; status: 'running' | 'complete' | 'failed' | 'interrupted'; source: Source; model: string;
+  variant: Variant; caseId: string; startedAt: string; updatedAt: string; finishedAt?: string; pid?: number | null;
+  phase: 'validating' | 'preparing' | 'running' | 'billing' | 'exporting' | 'complete' | 'failed' | 'interrupted';
+  currentCaseId?: string | null; completedCases: CaseResult[]; completedCount: number; totalCases: number; message: string; error?: string;
+};
+export type RunInput = { source: Source; model: string; variant: Variant; caseId: string; baseUrl?: string; maxCalls: number; capUsd?: number; capConfirmed?: boolean };
+export type History = { revision: string; rows: Row[]; runTimings: CaseTiming[]; warnings: string[] };
+export type Overview = { job: Job | null; revision: string };
+
+export function object(value: unknown, label: string): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must be an object.`);
+  return value as Record<string, unknown>;
+}
+function strings(value: Record<string, unknown>, fields: string[], label: string) {
+  for (const key of fields) if (typeof value[key] !== 'string') throw new Error(`${label}.${key} must be a string.`);
+}
+function nonnegative(value: unknown): value is number { return typeof value === 'number' && Number.isFinite(value) && value >= 0; }
+export function parseJob(value: unknown): Job | null {
+  if (value === null) return null;
+  const job = object(value, 'Job');
+  strings(job, ['id', 'source', 'model', 'variant', 'caseId', 'startedAt', 'updatedAt', 'message'], 'Job');
+  if (!/^\d{14,20}$/.test(String(job.id)) || !['freetoken', 'openrouter', 'compatible'].includes(String(job.source)) ||
+      !['base', 'careful', 'both'].includes(String(job.variant)) ||
+      !['running', 'complete', 'failed', 'interrupted'].includes(String(job.status)) ||
+      !['validating', 'preparing', 'running', 'billing', 'exporting', 'complete', 'failed', 'interrupted'].includes(String(job.phase)) ||
+      !Number.isInteger(job.completedCount) || !Number.isInteger(job.totalCases) || Number(job.completedCount) < 0 || Number(job.totalCases) < Number(job.completedCount) ||
+      (job.pid != null && (!Number.isInteger(job.pid) || Number(job.pid) <= 0)) || !Array.isArray(job.completedCases)) throw new Error('Invalid persisted job contract.');
+  for (const entry of job.completedCases) {
+    const result = object(entry, 'Case result');
+    if (typeof result.caseId !== 'string' || !['complete', 'failed'].includes(String(result.status)) ||
+        (result.passed != null && typeof result.passed !== 'boolean') ||
+        (result.modelCalls != null && !nonnegative(result.modelCalls))) throw new Error('Invalid case result contract.');
+  }
+  return job as unknown as Job;
+}
+export function parseCase(value: unknown): BenchmarkCase {
+  const entry = object(value, 'Case');
+  strings(entry, ['id', 'name', 'category', 'suite', 'fixture'], 'Case');
+  if (!['smoke', 'ha', 'laptop'].includes(String(entry.suite)) || !Number.isInteger(entry.maxModelCalls) || Number(entry.maxModelCalls) < 1) throw new Error('Invalid case call ceiling.');
+  return entry as unknown as BenchmarkCase;
+}
+export function parseRow(value: unknown): Row {
+  const row = object(value, 'Summary row');
+  strings(row, ['task', 'run_id', 'sample_id', 'prompt_variant', 'status', 'model'], 'Summary row');
+  for (const key of ['started_at', 'fixture', 'log_file', 'concrete_response_model', 'inspect_version', 'score_explanation']) {
+    if (row[key] != null && typeof row[key] !== 'string') throw new Error(`Summary row.${key} must be a string.`);
+  }
+  for (const key of ['routed_models', 'providers']) {
+    if (row[key] != null && (!Array.isArray(row[key]) || row[key].some((value) => typeof value !== 'string'))) throw new Error(`Summary row.${key} must contain strings.`);
+  }
+  if (row.passed !== null && typeof row.passed !== 'boolean') throw new Error('Summary row.passed must be boolean or null.');
+  for (const key of ['model_calls', 'tool_calls', 'latency_seconds']) if (row[key] != null && !nonnegative(row[key])) throw new Error(`Summary row.${key} must be nonnegative.`);
+  if (row.usage != null) {
+    for (const value of Object.values(object(row.usage, 'Usage'))) {
+      const use = object(value, 'Model usage');
+      for (const key of ['total_tokens', 'total_cost']) if (use[key] != null && !nonnegative(use[key])) throw new Error(`Usage.${key} must be nonnegative.`);
+    }
+  }
+  if (row.billing != null) {
+    const billing = object(row.billing, 'Billing');
+    if (typeof billing.complete !== 'boolean' ||
+        (billing.complete ? !nonnegative(billing.cost_usd) || billing.partial_cost_usd !== null : billing.cost_usd !== null || billing.partial_cost_usd != null && !nonnegative(billing.partial_cost_usd))) {
+      throw new Error('Invalid billing completeness contract.');
+    }
+    for (const key of ['generation_attempts', 'unknown_attempts', 'lookup_failures']) {
+      if (billing[key] != null && (!Number.isInteger(billing[key]) || !nonnegative(billing[key]))) throw new Error(`Billing.${key} must be a nonnegative integer.`);
+    }
+  }
+  return row as unknown as Row;
+}
+export function parseTiming(value: unknown): CaseTiming {
+  const timing = object(value, 'Timing');
+  strings(timing, ['case_id', 'status'], 'Timing');
+  for (const key of ['setup_seconds', 'evaluation_seconds', 'teardown_seconds', 'total_wall_seconds']) {
+    if (timing[key] != null && !nonnegative(timing[key])) throw new Error(`Timing.${key} must be nonnegative.`);
+  }
+  return timing as unknown as CaseTiming;
+}
+export function parseOverview(value: unknown): Overview {
+  const overview = object(value, 'Overview');
+  if (typeof overview.revision !== 'string') throw new Error('Overview revision is missing.');
+  return { revision: overview.revision, job: parseJob(overview.job) };
+}
+export function parseHistory(value: unknown): History {
+  const history = object(value, 'History');
+  if (typeof history.revision !== 'string' || !Array.isArray(history.rows) || !Array.isArray(history.runTimings) ||
+      !Array.isArray(history.warnings) || history.warnings.some((warning) => typeof warning !== 'string')) throw new Error('Invalid history response.');
+  return { revision: history.revision, rows: history.rows.map(parseRow), runTimings: history.runTimings.map(parseTiming), warnings: history.warnings as string[] };
+}

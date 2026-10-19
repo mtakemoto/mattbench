@@ -1,5 +1,6 @@
 import { json } from '@sveltejs/kit';
-import { models, type Source } from '../../../lib/server/bench';
+import { models } from '../../../lib/server/bench';
+import type { Source } from '../../../lib/contracts';
 
 export async function GET({ url }: { url: URL }) {
   const source = url.searchParams.get('source');

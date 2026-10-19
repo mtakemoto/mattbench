@@ -1,0 +1,274 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mattbench.local/schemas/laptop-catalog.schema.json",
+  "title": "LaptopCatalog",
+  "description": "Catalog of laptops for benchmark evaluation cases.",
+  "type": "array",
+  "items": {
+    "$ref": "#/$defs/LaptopSpecification"
+  },
+  "$defs": {
+    "LaptopSpecification": {
+      "title": "LaptopSpecification",
+      "description": "Structured specification and image metadata for a single laptop.",
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "brand",
+        "price_usd",
+        "os",
+        "screen",
+        "dimensions",
+        "weight_lbs",
+        "battery",
+        "processor",
+        "ram",
+        "storage",
+        "graphics",
+        "ports",
+        "images"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9_]+$",
+          "description": "Unique machine-readable identifier for the laptop"
+        },
+        "name": {
+          "type": "string",
+          "description": "Full commercial product name"
+        },
+        "brand": {
+          "type": "string",
+          "description": "Manufacturer brand"
+        },
+        "model_number": {
+          "type": "string",
+          "description": "Manufacturer model or part number"
+        },
+        "price_usd": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Approximate retail price in USD"
+        },
+        "source_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Primary retailer or manufacturer product page"
+        },
+        "images": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Pictures of the laptop showing angles, displays, and ports",
+          "items": {
+            "type": "object",
+            "required": ["url", "description", "view_type"],
+            "properties": {
+              "url": {
+                "type": "string",
+                "format": "uri"
+              },
+              "description": {
+                "type": "string"
+              },
+              "view_type": {
+                "type": "string",
+                "enum": ["front", "angled", "keyboard", "ports", "open", "profile"]
+              }
+            }
+          }
+        },
+        "os": {
+          "type": "string",
+          "description": "Pre-installed operating system and supported platforms"
+        },
+        "screen": {
+          "type": "object",
+          "required": [
+            "size_inches",
+            "resolution",
+            "resolution_horizontal",
+            "resolution_vertical",
+            "aspect_ratio",
+            "refresh_rate_hz",
+            "panel_type",
+            "touchscreen",
+            "brightness_nits"
+          ],
+          "properties": {
+            "size_inches": {
+              "type": "number",
+              "minimum": 10,
+              "maximum": 20
+            },
+            "resolution": {
+              "type": "string",
+              "pattern": "^[0-9]+x[0-9]+$"
+            },
+            "resolution_horizontal": {
+              "type": "integer",
+              "minimum": 800
+            },
+            "resolution_vertical": {
+              "type": "integer",
+              "minimum": 600
+            },
+            "aspect_ratio": {
+              "type": "string"
+            },
+            "refresh_rate_hz": {
+              "type": "integer",
+              "minimum": 30
+            },
+            "panel_type": {
+              "type": "string"
+            },
+            "touchscreen": {
+              "type": "boolean"
+            },
+            "brightness_nits": {
+              "type": "integer",
+              "minimum": 100
+            }
+          }
+        },
+        "dimensions": {
+          "type": "object",
+          "required": ["width_in", "depth_in", "thickness_in", "formatted"],
+          "properties": {
+            "width_in": {
+              "type": "number",
+              "minimum": 5
+            },
+            "depth_in": {
+              "type": "number",
+              "minimum": 5
+            },
+            "thickness_in": {
+              "type": "number",
+              "minimum": 0.1
+            },
+            "formatted": {
+              "type": "string"
+            }
+          }
+        },
+        "weight_lbs": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 15
+        },
+        "battery": {
+          "type": "object",
+          "required": ["capacity_wh", "estimated_life_hours"],
+          "properties": {
+            "capacity_wh": {
+              "type": "number",
+              "minimum": 20
+            },
+            "estimated_life_hours": {
+              "type": "number",
+              "minimum": 1
+            }
+          }
+        },
+        "processor": {
+          "type": "object",
+          "required": ["model", "brand", "cores", "architecture"],
+          "properties": {
+            "model": {
+              "type": "string"
+            },
+            "brand": {
+              "type": "string"
+            },
+            "cores": {
+              "type": "integer",
+              "minimum": 2
+            },
+            "threads": {
+              "type": ["integer", "null"]
+            },
+            "boost_clock_ghz": {
+              "type": ["number", "null"]
+            },
+            "architecture": {
+              "type": "string",
+              "enum": ["x86_64", "ARM64"]
+            },
+            "npu_tops": {
+              "type": ["number", "null"]
+            }
+          }
+        },
+        "ram": {
+          "type": "object",
+          "required": ["capacity_gb", "type", "upgradable"],
+          "properties": {
+            "capacity_gb": {
+              "type": "integer",
+              "minimum": 4
+            },
+            "type": {
+              "type": "string"
+            },
+            "speed_mhz": {
+              "type": ["integer", "null"]
+            },
+            "upgradable": {
+              "type": "boolean"
+            }
+          }
+        },
+        "storage": {
+          "type": "object",
+          "required": ["capacity_gb", "type", "upgradable"],
+          "properties": {
+            "capacity_gb": {
+              "type": "integer",
+              "minimum": 64
+            },
+            "type": {
+              "type": "string"
+            },
+            "upgradable": {
+              "type": "boolean"
+            }
+          }
+        },
+        "graphics": {
+          "type": "object",
+          "required": ["gpu", "type"],
+          "properties": {
+            "gpu": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": ["integrated", "discrete"]
+            },
+            "vram_gb": {
+              "type": ["integer", "null"]
+            }
+          }
+        },
+        "ports": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "webcam": {
+          "type": "string"
+        },
+        "special_features": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

@@ -2,9 +2,8 @@
 
 import json
 import os
-import subprocess
 from pathlib import Path
-from urllib.request import Request, urlopen
+from typing import TYPE_CHECKING
 
 from inspect_ai import Task, task
 from inspect_ai.agent import react
@@ -15,22 +14,30 @@ from inspect_ai.tool import bash
 from inspect_ai.tool import mcp_server_stdio, mcp_tools
 from inspect_ai.util import sandbox
 
+from scripts.bounded_process import run_bounded_async
+from scripts.execution_plan import build_plan
+
+if TYPE_CHECKING:
+    from scripts.execution_plan import SmokeCase
+
 
 ROOT = Path(__file__).resolve().parent
 
 
 @task
-def smoke(prompt_variant: str = "base") -> Task:
+def smoke(prompt_variant: str = "base", rows: tuple["SmokeCase", ...] | None = None) -> Task:
     if prompt_variant not in {"base", "careful"}:
         raise ValueError("Unknown smoke prompt variant")
-    rows = json.loads((ROOT / "tasks/smoke.json").read_text())
+    if rows is None:
+        rows = json.loads((ROOT / "tasks/smoke.json").read_text())
     return Task(
         dataset=[
             Sample(
-                id=row["id"],
-                input=row["prompt"],
-                target=row["expected"],
-                metadata={"category": row["category"], "fixture": "tasks/smoke.json", "prompt_variant": prompt_variant},
+                id=row["id"] if isinstance(row, dict) else row.id,
+                input=row["prompt"] if isinstance(row, dict) else row.prompt,
+                target=row["expected"] if isinstance(row, dict) else row.expected,
+                metadata={"category": row["category"] if isinstance(row, dict) else row.category,
+                          "fixture": "tasks/smoke.json", "prompt_variant": prompt_variant},
             )
             for row in rows
         ],
@@ -95,7 +102,7 @@ def synthetic_ha_state(case: dict) -> object:
     async def score(state: TaskState, target: Target) -> Score:
         container = os.environ["MATTBENCH_SYNTHETIC_HA_CONTAINER"]
         token = os.environ["MATTBENCH_SYNTHETIC_HA_TOKEN"]
-        def get_state(entity_id: str) -> dict:
+        async def get_state(entity_id: str) -> dict:
             script = (
                 "import json,sys,urllib.request; "
                 "p=json.load(sys.stdin); "
@@ -103,19 +110,16 @@ def synthetic_ha_state(case: dict) -> object:
                 "headers={'Authorization':'Bearer '+p['token']}); "
                 "print(urllib.request.urlopen(r,timeout=10).read().decode())"
             )
-            result = subprocess.run(
+            result = await run_bounded_async(
                 ["docker", "exec", "-i", container, "python", "-c", script],
-                input=json.dumps({"entity": entity_id, "token": token}),
+                timeout=20, input=json.dumps({"entity": entity_id, "token": token}),
                 text=True, capture_output=True, check=True,
             )
             return json.loads(result.stdout)
-        def matches(actual: dict, wanted: dict) -> bool:
-            return all(
-                matches(actual.get(key, {}), value) if isinstance(value, dict)
-                else actual.get(key) == value
-                for key, value in wanted.items()
-            )
-        correct = all(matches(get_state(entity_id), wanted) for entity_id, wanted in case["expected"].items())
+        correct = True
+        for entity_id, wanted in case["expected"].items():
+            if not _ha_matches(await get_state(entity_id), wanted):
+                correct = False
         trace_ok, trace_reason = safe_ha_trace(state.messages, case)
         return Score(
             value=1 if correct and trace_ok else 0,
@@ -128,61 +132,158 @@ def synthetic_ha_state(case: dict) -> object:
     return score
 
 
+def _ha_result(message: object) -> dict | None:
+    """Decode a successful ha-mcp result; Inspect tool errors and payload errors fail closed."""
+    if getattr(message, "error", None) or not getattr(message, "text", "").strip():
+        return None
+    try:
+        payload = json.loads(message.text)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    if (payload.get("success") is False or payload.get("isError") is True
+            or payload.get("is_error") is True or payload.get("error")
+            or payload.get("status") in ("error", "failed")):
+        return None
+    if isinstance(payload.get("data"), dict) and (
+        payload["data"].get("error") or payload["data"].get("success") is False
+    ):
+        return None
+    return payload
+
+
+def _ha_matches(actual: dict, wanted: dict) -> bool:
+    if not isinstance(actual, dict):
+        return False
+    return all(
+        _ha_matches(actual.get(key, {}), value) if isinstance(value, dict)
+        else actual.get(key) == value
+        for key, value in wanted.items()
+    )
+
+def _ha_search_found(payload: object, entity: str) -> bool:
+    if isinstance(payload, dict):
+        return payload.get("entity_id") == entity or any(
+            _ha_search_found(value, entity)
+            for key, value in payload.items() if key not in {"query", "metadata"}
+        )
+    if isinstance(payload, list):
+        return any(_ha_search_found(value, entity) for value in payload)
+    return False
+
+
+
 def safe_ha_trace(messages: list, case: dict) -> tuple[bool, str]:
-    """Check each requested write and the readback sequence, including failed calls."""
-    calls = [call for message in messages for call in (getattr(message, "tool_calls", None) or [])]
+    """Require correlated successful tool results before dependent requests."""
     action = case["action"]
     expected_data = dict(action["data"])
     expected_entity = expected_data.pop("entity_id")
-    writes = []
-    for index, call in enumerate(calls):
-        if call.function != "ha_call_service":
-            continue
-        args = call.arguments
-        if set(args) - {"domain", "service", "entity_id", "data", "return_response", "wait"}:
-            return False, "A service call included an unapproved target or parameter."
-        data = args.get("data") or {}
-        try:
-            data = json.loads(data) if isinstance(data, str) else data
-        except json.JSONDecodeError:
-            return False, "A service call contained invalid data."
-        if not isinstance(data, dict):
-            return False, "A service call contained invalid data."
-        data = dict(data)
-        nested_entity = data.pop("entity_id", None)
-        direct_entity = args.get("entity_id")
-        if direct_entity and nested_entity and direct_entity != nested_entity:
-            return False, "A service call contained conflicting targets."
-        effective_entity = direct_entity or nested_entity
-        if (args.get("domain"), args.get("service"), effective_entity, data) != (
-            action["domain"], action["service"], expected_entity, expected_data
-        ):
-            return False, "A service call did not match the allowed target and action."
-        writes.append(index)
-    if not writes:
-        return False, "The target service was not called."
-    first_write = writes[0]
-    if case.get("require_search") and not any(call.function == "ha_search" for call in calls[:first_write]):
-        return False, "No entity search preceded the write."
-    for entity in case.get("require_initial_read", []):
-        if not any(call.function == "ha_get_state" and call.arguments.get("entity_id") == entity
-                   for call in calls[:first_write]):
-            return False, "A required initial state read was missing."
-    for entity in case["expected"]:
-        if not any(call.function == "ha_get_state" and call.arguments.get("entity_id") == entity
-                   for call in calls[writes[-1] + 1:]):
-            return False, "A required state readback was missing."
+    initial = set(case.get("require_initial_read", []))
+    readbacks = set(case["expected"])
+    found = not case.get("require_search", False)
+    observed: set[str] = set()
+    verified: set[str] = set()
+    write_epoch = 0
+    completed_write_epoch = 0
+    pending: dict[str, tuple[str, str | list[str] | None, int, bool]] = {}
+    seen: set[str] = set()
+    for message in messages:
+        if getattr(message, "role", None) == "assistant":
+            for call in message.tool_calls or []:
+                if not call.id or call.id in seen:
+                    return False, "A tool request lacked a unique call ID."
+                seen.add(call.id)
+                if call.function == "ha_call_service":
+                    args = call.arguments
+                    if not isinstance(args, dict) or set(args) - {
+                        "domain", "service", "entity_id", "data", "return_response", "wait"
+                    }:
+                        return False, "A service call included an unapproved target or parameter."
+                    data = args.get("data") or {}
+                    try:
+                        data = json.loads(data) if isinstance(data, str) else data
+                    except json.JSONDecodeError:
+                        return False, "A service call contained invalid data."
+                    if not isinstance(data, dict):
+                        return False, "A service call contained invalid data."
+                    data = dict(data)
+                    nested_entity = data.pop("entity_id", None)
+                    direct_entity = args.get("entity_id")
+                    if direct_entity and nested_entity and direct_entity != nested_entity:
+                        return False, "A service call contained conflicting targets."
+                    effective_entity = direct_entity or nested_entity
+                    if (args.get("domain"), args.get("service"), effective_entity, data) != (
+                        action["domain"], action["service"], expected_entity, expected_data
+                    ):
+                        return False, "A service call did not match the allowed target and action."
+                    if not found:
+                        return False, "No successful relevant entity search preceded the write."
+                    if not initial <= observed:
+                        return False, "A required initial state read was missing or unsuccessful."
+                    write_epoch += 1
+                    completed_write_epoch = 0
+                    verified.clear()
+                    pending[call.id] = (call.function, None, write_epoch, False)
+                elif call.function in {"ha_get_state", "ha_search"}:
+                    entity = call.arguments.get("entity_id") if isinstance(call.arguments, dict) else None
+                    fields = call.arguments.get("fields") if isinstance(call.arguments, dict) else None
+                    if isinstance(fields, str):
+                        fields = [fields]
+                    projected = (isinstance(fields, list) and all(isinstance(field, str) for field in fields)
+                                 and "state" in fields and "entity_id" not in fields)
+                    pending[call.id] = (call.function, entity, completed_write_epoch, projected)
+        elif getattr(message, "role", None) == "tool":
+            entry = pending.pop(message.tool_call_id, None)
+            if entry is None:
+                return False, "A tool result did not match a requested call ID."
+            function, entity, request_epoch, projected = entry
+            if message.function != function:
+                return False, "A tool result did not match its requested function."
+            result = _ha_result(message)
+            if result is None:
+                continue
+            if function == "ha_call_service":
+                if request_epoch == write_epoch and result.get("success") is True:
+                    completed_write_epoch = write_epoch
+            elif function == "ha_search":
+                found = _ha_search_found(result.get("data", result.get("results", result)), expected_entity)
+            elif function == "ha_get_state":
+                entities = (entity,) if isinstance(entity, str) else entity if isinstance(entity, list) else ()
+                if not entities or not all(isinstance(item, str) for item in entities):
+                    continue
+                bulk = isinstance(entity, list)
+                records = result.get("states") if bulk else {entity: result.get("data")}
+                if not isinstance(records, dict):
+                    continue
+                for requested in entities:
+                    state = records.get(requested)
+                    if (not isinstance(state, dict) or state.get("error") or state.get("success") is False
+                            or state.get("entity_id", requested if bulk or projected else None) != requested
+                            or not isinstance(state.get("state"), str)):
+                        continue
+                    if (request_epoch != 0 and request_epoch == completed_write_epoch
+                            and requested in readbacks and _ha_matches(state, case["expected"][requested])):
+                        verified.add(requested)
+                    elif request_epoch == 0 and completed_write_epoch == 0:
+                        observed.add(requested)
+    if pending:
+        return False, "A requested tool result was missing."
+    if not completed_write_epoch:
+        return False, "The target service did not complete successfully."
+    if not readbacks <= verified:
+        return False, "A required successful state readback was missing."
     return True, "Tool sequence matched the pinned case."
 
 
 def ha_cases() -> dict[str, dict]:
-    cases = json.loads((ROOT / "tasks/inspect-ha-cases.json").read_text())
-    return {case["id"]: case for case in cases}
+    return {case.id: case.to_dict() for case in build_plan(case_id="all").ha_cases}
 
 
 @task
-def ha_case(case_id: str = "mxz_coordinator_target") -> Task:
-    case = ha_cases()[case_id]
+def ha_case(case_id: str = "mxz_coordinator_target", case: dict | None = None) -> Task:
+    if case is None:
+        case = ha_cases()[case_id]
     container = os.environ["MATTBENCH_SYNTHETIC_MCP_CONTAINER"]
     server = mcp_server_stdio(name="synthetic_ha_mcp", command="docker", args=["exec", "-i", container, "ha-mcp"])
     return Task(
@@ -200,7 +301,3 @@ def ha_case(case_id: str = "mxz_coordinator_target") -> Task:
         version="4",
     )
 
-
-def ha_chained() -> Task:
-    """Historical pilot alias; use ha_case for new runs."""
-    return ha_case()
