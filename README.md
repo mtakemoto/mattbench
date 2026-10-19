@@ -1,72 +1,146 @@
-# Personal agent benchmarks
+# Overview
 
-Personal evaluation workspace for comparing models and agent setups on tasks that matter here: Home Assistant investigation through `homeassistant-ai/ha-mcp`, safe smart-home changes in an isolated test home, and coding in a disposable repository. The aim is a useful decision from a small number of bounded runs, not a public leaderboard.
+With the sheer number of AI agents coming out now and claims of other models "benchmaxxing" (AKA training to the test), I decided to sic an agent on writing my own personal benchmarking suite of test cases I'm familiar with.  I try to keep all of the test cases personally relevant and verifiable, with familiar things like laptop shopping and smart home automation that have a result that I can hold in my head.
 
-The first two no-tool cases are in [tasks/smoke.json](tasks/smoke.json). [Promptfoo](https://www.promptfoo.dev/docs/configuration/guide/) is pinned at `0.124.1` for a local smoke run; [smoke.py](smoke.py) remains an independent offline grader. Start with [the handoff](docs/context-handoff.md), [the evaluation plan](docs/evaluation-plan.md), [the benchmark framework review](docs/benchmark-framework-review.md), and [the ha-mcp test review](docs/upstream-ha-mcp-review.md).
+This project provides a web UI to test models against that suite.  The models can be either local, via openrouter or on another device on your network.
 
-Two [agent instruction cases](docs/agent-instruction-benchmarks.md) cover ambiguous rule scope and discovering the active agent harness's documented user-wide instruction file. The first ran under Pi in a disposable Inspect sandbox and failed its scoped assertion. The second remains unrun.
+The main focus of this project is finding good and cheap models capable of doing specific things, not really on validating frontier models (yet, anyway).  Below, my agent will get you familiar with the tech stack and advise you on how to run it yourself.
 
-The reading-lamp and MXZ cases are grouped as **Smart home** in the case manifest and console. The next coding cases are being specified in the [even/odd behavior plan](docs/coding-even-odd-benchmark.md) and [clean-code style plan](docs/clean-code-benchmark-plan.md); those plans are not yet runnable cases.
 
-## Inspect AI replacement pilot
+## What it tests
 
-[Inspect AI](https://inspect.aisi.org.uk/) `0.3.278` is now the primary engine for new benchmarks. It ran the smoke questions, a disposable coding repair, real ha-mcp against a synthetic Home Assistant container, and an actual Pi agent instruction task. The [pilot report](docs/inspect-pilot.md) records the results and limits. The Pi task failed its scoped instruction assertion; the harness and grading path worked. Install the pinned Python dependencies from [requirements-inspect.txt](requirements-inspect.txt) in an ignored `.venv`, then run `.venv/bin/python scripts/run-inspect-local.py`. Run `.venv/bin/python scripts/inspect-report.py` to export dashboard-ready, non-secret fields to ignored `artifacts/inspect/summary.json`; use `.venv/bin/inspect view --log-dir artifacts/inspect` for detailed local logs. Local launchers have no paid-provider fallback.
+Each **suite** is a small group of cases with an objective grader. No LLM judge is used.
 
-The [Svelte benchmark console](web/README.md) is a core entry point. Install its dependencies with `npm --prefix web ci`, then launch it from the repository root with `npm run web` and open `http://127.0.0.1:5173`. `npm run web:check` and `npm run web:build` run its checks and production build. Benchmark suites are discovered from `suites/`: each `suites/<id>/` package defines one suite (fixture, Inspect task, prompt variants, limits), and the plan, worker, report and console read them from that registry. See [Add a benchmark suite](docs/adding-a-suite.md). The default **Run everything** selection evaluates every registered suite in order with the base prompt; smart home cases each get a fresh disposable Synthetic Home/real ha-mcp instance. The call ceiling is computed from each case's limit and shown before the run. Prompt variants such as Careful are offered only when every selected suite supports them. It accepts FreeToken, OpenRouter, or a private compatible endpoint; API retries are disabled. OpenRouter runs require confirmation of the active workspace dollar cap. The console reports the current phase and case, completed/total case count, and finished case outcomes. A case failure records an unsuccessful evaluator process and does not stop later cases; evaluator success is separate from the model's score. The overall job finishes as failed if any case process fails, with completed case results retained. The app runs on loopback.
+| Suite | Cases | What the model must do | Needs |
+|---|---:|---|---|
+| Smoke questions | 2 | Answer short reasoning questions (letter count, car-wash trip) with one exact answer. | Nothing extra |
+| Smart home | 2 | Find, change, and read back Home Assistant entities through the real [ha-mcp](https://github.com/homeassistant-ai/ha-mcp) server. Each case gets a fresh, disposable [Synthetic Home](https://github.com/allenporter/home-assistant-synthetic-home) container. The grader checks the final entity state and the tool trace. | Docker |
+| Laptop shopping | 13 | Pick the laptop from a fixed ten-laptop catalog that fits a buyer persona, or answer ALL/NONE for trick questions. | Nothing extra |
 
-The first [OpenRouter GLM 5.3 Flash suite report](docs/glm-flash-suite.md) records 19 model calls, exact billed cost, two strict HA trace failures despite correct final synthetic states, and measured container reset overhead.
+A handful of cases screens models. It does not prove that one model is better than another in general.
 
-## Run the Promptfoo smoke test
+## How it works
 
-With Node 22 and npm installed, run `npm ci --ignore-scripts` and then `npm run smoke`. The command reads the two pinned tasks, uses a deterministic synthetic provider, and writes [an HTML report](artifacts/promptfoo-smoke.html) and JSON results under the Git-ignored `artifacts/` directory. It disables caching, sharing, telemetry, and remote generation. It makes no model or Home Assistant request and costs nothing. The HTML report is a local task-by-provider table; the real-provider runs are described below.
+```
+suites/<id>/          one package per suite: fixture, Inspect task, grader, limits
+   │
+   ▼
+scripts/execution_plan.py   freezes the selected cases and the model-call ceiling
+   │
+   ▼
+scripts/benchmark-worker.py runs each case with Inspect AI, collects billing,
+   │                        and exports sanitized rows
+   ▼
+artifacts/inspect/          raw logs + summary.json (Git-ignored)
+   │
+   ▼
+web/                        SvelteKit console: pick a model, run, view results
+```
 
-**Observed — initial setup, 2026-10-10:** `npm run smoke` passed both cases with Promptfoo `0.124.1`; the exported result shows two synthetic provider requests and zero model tokens. At that stage, no OpenRouter key or local model endpoint was available to this process. Later hosted and local runs are recorded below.
+- **[Inspect AI](https://inspect.aisi.org.uk/)** is the evaluation engine.
+- **The console** (`web/`) is the main entry point. It discovers suites from `suites/`, so it has no suite-specific code.
+- **Model sources:** a local OpenAI-compatible server ([FreeToken](https://github.com/FlashML-org/FreeToken) or similar), [OpenRouter](https://openrouter.ai/), or any other OpenAI-compatible `/v1` endpoint on loopback or your private network. A local run never falls back to a paid provider.
 
-The owner chose the newest GLM Flash model for the first hosted run. [OpenRouter's GLM Flash Latest page](https://openrouter.ai/~z-ai/glm-flash-latest) currently points to [GLM 5.3 Flash](https://openrouter.ai/z-ai/glm-5.3-flash), so [the hosted configuration](promptfooconfig.openrouter.cjs) pins `z-ai/glm-5.3-flash` instead of the moving alias. Put the key after `OPENROUTER_API_KEY=` in the Git-ignored `.env` file, or export it in the process environment. After verifying the $20/week workspace cap, run `MATTBENCH_CONFIRMED_WEEKLY_CAP_USD=20 npm run smoke:openrouter`. That command accepts exactly two fixture rows, one repeat, and one provider. It writes a separate ignored report under `artifacts/`. Never paste the key into chat or commit it to Git.
+## Get started
 
-The [first hosted smoke report](docs/first-hosted-smoke.md) records the original two-request run and a separate corrected verification run. The first strict score was affected by Promptfoo's reasoning display; with `showThinking: false`, GLM 5.3 Flash passed both simple cases. Both runs' usage, latency, and reported costs are preserved.
+### Prerequisites
 
-## Run against local FreeToken
+- Linux (the only platform tested)
+- Python 3.12
+- Node.js 22 and npm
+- Docker, for the Smart home suite only
+- At least one model source: a local OpenAI-compatible server, an OpenRouter API key, or another `/v1` endpoint
 
-Set `MATTBENCH_LOCAL_BASE_URL` and `MATTBENCH_LOCAL_MODEL` in the ignored `.env` file. Use the base URL through `/v1` and the exact model ID returned by your server's `/v1/models`; the current local values are already filled in. Run `npm run smoke:local`. The command checks that the URL is loopback and the model is served, then runs the same two tasks and grader as the hosted configuration. It clears hosted API key variables, disables OpenAI's default key fallback, and contains no OpenRouter provider. Results go to [the local HTML report](artifacts/promptfoo-local-smoke.html) and an ignored JSON export. If the endpoint or model is unavailable, the run stops without switching providers.
+### 1. Install
 
-**Observed — 2026-10-10:** The served Qwen 3.6 variant passed strawberry (`3`) and failed car wash (`WALK`), for **1/2** on this tiny no-tool set. The run took about 50 seconds and reported 655 tokens. See [the local run report](docs/first-local-smoke.md) for settings and limits. Local compute cost was not measured.
+From the repository root:
 
-| Smoke run | Exact answers | Run time | Tokens | Provider charge |
-|---|---:|---:|---:|---:|
-| [OpenRouter GLM 5.3 Flash](docs/first-hosted-smoke.md) | 2/2 | 3.3 s | 224 | $0.00008309 reported |
-| [Local Qwen 3.6 variant](docs/first-local-smoke.md) | 1/2 | 50.0 s | 655 | No hosted charge; compute cost unknown |
+```bash
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -r requirements-inspect.txt
+npm --prefix web ci
+```
 
-These two prompts only check the no-tool path. The local run's first request was much slower; whether that was server warm-up is **Unknown**.
+### 2. Configure model sources
 
-## Run the first Home Assistant MCP benchmark
+```bash
+cp .env.example .env
+```
 
-Run `npm run ha:local` with the same loopback FreeToken settings in the ignored `.env`. This runs one [pinned read-only task](tasks/ha-readonly.json) against a [fictional Synthetic Home inventory](fixtures/ha/north-room.yaml). A local stdio MCP server exposes only `ha_search` and `ha_get_state`; it has no Home Assistant connection, network client, or write tools. The agent makes at most four local model requests and four tool calls. There is no paid-provider fallback. The grader requires the exact answer and a state read of the correct coordinator entity. The HTML report, JSON result, and tool-call trace are ignored under `artifacts/`.
+Fill in only what you use. `.env` is Git-ignored.
 
-Run `npm run ha:offline` to verify the complete Promptfoo → model API → MCP → grader path using a deterministic loopback stub. This is a harness test, not a model score. It writes separate offline artifacts.
+- `MATTBENCH_LOCAL_BASE_URL`: your local server's base URL, ending in `/v1`
+- `MATTBENCH_LOCAL_MODEL`: an exact model ID from that server's `/v1/models`
+- `OPENROUTER_API_KEY`: your OpenRouter key
 
-**Observed — 2026-10-10:** The local Qwen 3.6 variant passed the first read-only case in three model requests and two MCP tool calls, using 2,226 reported tokens in 6.9 seconds. The [HA run report](docs/first-ha-local.md) records the settings, evidence, and limitations. The fixture was accepted by `synthetic-home==5.0.3`. No production Home Assistant connection was made.
+For a different endpoint, you can also type its `/v1` address into the console instead.
 
-For the substantive Home Assistant suite, use [real ha-mcp connected to a disposable Synthetic Home instance](docs/ha-container-benchmark.md), including chained write tasks. The handwritten MCP fixture remains only a cheap check of the agent loop. Each case starts from fresh Home Assistant state; no benchmark path uses production credentials or changes the live home.
+### 3. Build the Smart home image (optional)
 
-To grade answers offline, place a JSON object such as `{"strawberry_r_count":"3","car_wash_transport":"DRIVE"}` outside the repository, then run `python3 smoke.py /path/to/responses.json`. The command prints pass/fail per case and makes no network calls.
+Skip this step if you do not run the Smart home suite.
 
-## Intended model sources
+```bash
+docker build -t mattbench-synthetic-ha:2026.10.1-v1 inspect/ha
+```
 
-- **OpenRouter:** fixed model IDs for fair comparisons. Discover candidates and current price, context, and tool support from its [Models API](https://openrouter.ai/docs/api/api-reference/models/list-all-models-and-their-properties). Treat `openrouter/pareto-code` as a separate, moving coding-router baseline and record the concrete response model.
-- **FreeToken:** local models through its OpenAI-compatible HTTP API. Use the same tasks and scoring as hosted models, but measure local latency and hardware use separately. Local requests do not pass through OpenRouter.
+This image is Home Assistant with the pinned Synthetic Home integration. The pinned ha-mcp image is pulled by digest when it is first used. Benchmark containers run on an internal Docker network and never use production Home Assistant credentials.
 
-The owner confirmed that OpenRouter's Pareto coding router is the intended dynamic frontier target.
+### 4. Run the console
 
-## Boundaries
+```bash
+npm run web
+```
 
-This repository contains plans and sanitized fixtures only. Keep API keys, Home Assistant MCP URLs, long-lived tokens, private topology, raw traces, and live backups outside Git. Production Home Assistant is read-only for benchmark work. Tests that modify entities, automations, or dashboards use an isolated synthetic Home Assistant instance.
+Open <http://127.0.0.1:5173>. Choose a model source and a model, pick **Run everything** or a category, and start the run. The console shows progress per case, and you can cancel. Open **Results** for the scorecard and per-case grader explanations.
 
-## First implementation decisions
+The console listens only on loopback and has no authentication. Do not expose it to a network.
 
-1. Keep the pinned Promptfoo smoke configurations as historical baselines. Use Inspect AI for new runs, objective scoring, and the app report.
-2. For paid calls, use an OpenRouter workspace or dedicated key with an explicit USD limit and a fixed run/stop condition. Record usage per run; dynamic spending shutdown is optional.
-3. Keep the completed mock MCP case as a harness smoke test. Build the representative HA set through real ha-mcp and disposable Synthetic Home containers.
-4. Freeze model IDs, versions, prompts, tools, fixtures, and seeds for each comparison; run a small repeated finalist round.
+### Paid runs
 
-Sources and task ideas are in the docs. No model quality or local model fit is claimed yet.
+Before an OpenRouter run, set a dollar limit on your OpenRouter workspace or key. The console asks you to confirm that limit and shows the maximum model calls before it starts. It cannot stop a request that is already in progress, so the limit at OpenRouter is the real guard. Retries are disabled. After the run, the worker reads the actual charges from OpenRouter. Free (`:free`) models skip the confirmation.
+
+### Check the code
+
+```bash
+.venv/bin/python -m unittest discover -s tests   # Python harness tests, no model calls
+npm run web:check                                # Svelte type and lint checks
+```
+
+## Repository map
+
+| Path | Contents |
+|---|---|
+| `suites/` | Suite registry. One package per suite. |
+| `tasks/` | Case fixtures (JSON), all fictional and sanitized |
+| `fixtures/` | Supporting data: synthetic home inventories, laptop catalog, coding repos |
+| `scripts/` | Execution plan, worker, suite runner, report export, OpenRouter billing |
+| `inspect/` | Dockerfiles for the Synthetic Home image and sandboxes |
+| `web/` | SvelteKit console. See [web/README.md](web/README.md) for its internals. |
+| `tests/` | Python unit tests |
+| `docs/` | Plans, run reports, and design notes |
+| `artifacts/` | Run output (Git-ignored) |
+
+## For AI agents
+
+Read [AGENTS.md](AGENTS.md) first. It contains the safety rules and the evidence conventions (**Observed**, **Reported**, **Planned**, **Unknown**). In summary:
+
+- Write tests run only against a disposable synthetic Home Assistant. Never change the live home.
+- Never commit keys, tokens, private addresses, raw traces, or live entity IDs.
+- Get an explicit dollar cap before you make any paid model call.
+
+Then read, in this order:
+
+1. [Add a benchmark suite](docs/adding-a-suite.md): how the suite registry works
+2. [Evaluation plan](docs/evaluation-plan.md): goals, scoring, and run rules
+3. [Context handoff](docs/context-handoff.md): why the project exists and the original research
+
+## Further reading
+
+- **Run reports:** [GLM 5.3 Flash suite run](docs/glm-flash-suite.md), [Inspect AI pilot](docs/inspect-pilot.md), [first hosted smoke](docs/first-hosted-smoke.md), [first local smoke](docs/first-local-smoke.md), [first HA local](docs/first-ha-local.md)
+- **Suite designs:** [smart home containers](docs/ha-container-benchmark.md), [laptop shopping](docs/laptop-shopping-benchmark.md)
+- **Planned, not yet runnable:** [agent instruction cases](docs/agent-instruction-benchmarks.md) (Pi agent), [even/odd coding](docs/coding-even-odd-benchmark.md), [clean-code style](docs/clean-code-benchmark-plan.md)
+- **Background research:** [framework review](docs/benchmark-framework-review.md), [upstream ha-mcp test review](docs/upstream-ha-mcp-review.md)
+
+### Legacy Promptfoo baselines
+
+The project started on [Promptfoo](https://www.promptfoo.dev/) before it moved to Inspect AI. The original configurations stay as historical baselines. Install them with `npm ci --ignore-scripts` at the repository root. Then use `npm run smoke` (offline, deterministic), `npm run smoke:local`, `npm run smoke:openrouter`, `npm run ha:local`, or `npm run ha:offline`. The run reports above describe the settings and results. New work uses Inspect AI and the console.
